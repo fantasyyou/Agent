@@ -15,7 +15,6 @@ DEEPSEEK_TIMEOUT_SECONDS = 60
 
 def is_deepseek_configured() -> bool:
     return bool(DEEPSEEK_API_KEY.strip())
-git commit -m "首次提交：所有项目文件（已移除密钥）"
 
 def call_deepseek(
     system_prompt: str,
