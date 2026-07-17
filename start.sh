@@ -2,6 +2,16 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ -f "$ROOT_DIR/agent-python/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT_DIR/agent-python/.env"
+  set +a
+fi
+
+: "${DEEPSEEK_API_KEY:?Set DEEPSEEK_API_KEY in $ROOT_DIR/agent-python/.env}"
+
 NETWORK_NAME="${AGENT_NETWORK_NAME:-agent-network}"
 PYTHON_CONTAINER="${PYTHON_CONTAINER_NAME:-agent-app}"
 GO_CONTAINER="${GO_CONTAINER_NAME:-agent-go}"
@@ -37,6 +47,9 @@ docker run -d \
   --network "$NETWORK_NAME" \
   --restart unless-stopped \
   -p "${PYTHON_DEBUG_PORT}:8765" \
+  -e DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY" \
+  -e DEEPSEEK_API_URL="${DEEPSEEK_API_URL:-https://api.deepseek.com/v1/chat/completions}" \
+  -e DEEPSEEK_MODEL="${DEEPSEEK_MODEL:-deepseek-chat}" \
   agent-python:latest
 
 docker run -d \
