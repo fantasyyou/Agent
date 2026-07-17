@@ -38,6 +38,21 @@ if ! docker network inspect -f '{{range .Containers}}{{.Name}} {{end}}' "$NETWOR
   docker network connect "$NETWORK_NAME" "$ES_CONTAINER"
 fi
 
+echo "Waiting for Elasticsearch port 9200..."
+ES_READY=false
+for _ in $(seq 1 60); do
+  if docker exec "$ES_CONTAINER" bash -c '</dev/tcp/127.0.0.1/9200' >/dev/null 2>&1; then
+    ES_READY=true
+    break
+  fi
+  sleep 2
+done
+if [[ "$ES_READY" != "true" ]]; then
+  echo "Elasticsearch did not open port 9200 in time." >&2
+  docker logs --tail 50 "$ES_CONTAINER" >&2 || true
+  exit 1
+fi
+
 docker build -t agent-python:latest "$ROOT_DIR/agent-python"
 docker build -t agent-go:latest "$ROOT_DIR/agent-go"
 docker build -t agent-web:latest "$ROOT_DIR/agent-web"

@@ -22,13 +22,27 @@ def is_deepseek_configured() -> bool:
         and DEEPSEEK_API_KEY != "REPLACE_WITH_YOUR_DEEPSEEK_API_KEY"
     )
 
+
+def validate_deepseek_api_key() -> None:
+    key = DEEPSEEK_API_KEY.strip()
+    if not is_deepseek_configured():
+        raise RuntimeError("DEEPSEEK_API_KEY is empty or still uses the placeholder")
+    try:
+        key.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise RuntimeError(
+            "DEEPSEEK_API_KEY must contain ASCII characters only; "
+            "replace the Chinese placeholder with the real key"
+        ) from exc
+    if not key.startswith("sk-"):
+        raise RuntimeError("DEEPSEEK_API_KEY must start with 'sk-'")
+
 def call_deepseek(
     system_prompt: str,
     user_prompt: str,
     temperature: float = 0.2,
 ) -> str:
-    if not is_deepseek_configured():
-        raise RuntimeError("DEEPSEEK_API_KEY is empty")
+    validate_deepseek_api_key()
 
     payload: dict[str, Any] = {
         "model": DEEPSEEK_MODEL,
