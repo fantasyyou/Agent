@@ -1,6 +1,6 @@
 {
   "elasticsearch": {
-    "addresses": ["http://host.docker.internal:9200"],
+    "addresses": ["http://es:9200"],
     "username": "elastic",
     "password": "elastic",
     "api_key": "",
@@ -8,7 +8,7 @@
     "timeout": "10s"
   },
   "python_agent": {
-    "address": "agent-python:8765",
+    "address": "agent-app:8765",
     "timeout": "60s"
   },
   "memory": {

@@ -3,14 +3,25 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NETWORK_NAME="${AGENT_NETWORK_NAME:-agent-network}"
-PYTHON_CONTAINER="${PYTHON_CONTAINER_NAME:-agent-python}"
+PYTHON_CONTAINER="${PYTHON_CONTAINER_NAME:-agent-app}"
 GO_CONTAINER="${GO_CONTAINER_NAME:-agent-go}"
 WEB_CONTAINER="${WEB_CONTAINER_NAME:-agent-web}"
+ES_CONTAINER="${ES_CONTAINER_NAME:-es}"
 WEB_PORT="${WEB_PORT:-8081}"
 PYTHON_DEBUG_PORT="${PYTHON_DEBUG_PORT:-8080}"
 
 if ! docker network inspect "$NETWORK_NAME" >/dev/null 2>&1; then
   docker network create "$NETWORK_NAME" >/dev/null
+fi
+
+# Elasticsearch is stateful and managed independently. Attach the existing
+# container to the application network without restarting or recreating it.
+if ! docker container inspect "$ES_CONTAINER" >/dev/null 2>&1; then
+  echo "Elasticsearch container '$ES_CONTAINER' is not running or does not exist." >&2
+  exit 1
+fi
+if ! docker network inspect -f '{{range .Containers}}{{.Name}} {{end}}' "$NETWORK_NAME" | grep -qw "$ES_CONTAINER"; then
+  docker network connect "$NETWORK_NAME" "$ES_CONTAINER"
 fi
 
 docker build -t agent-python:latest "$ROOT_DIR/agent-python"
@@ -31,7 +42,6 @@ docker run -d \
 docker run -d \
   --name "$GO_CONTAINER" \
   --network "$NETWORK_NAME" \
-  --add-host=host.docker.internal:host-gateway \
   --restart unless-stopped \
   -p "${WEB_PORT}:8080" \
   -v "$ROOT_DIR/agent-go/config.json:/app/config.json:ro" \
