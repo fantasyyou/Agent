@@ -7,14 +7,20 @@ from typing import Any
 
 
 # Secrets must only be supplied through the environment.
-DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+DEEPSEEK_API_KEY = os.environ.get(
+    "DEEPSEEK_API_KEY",
+    "REPLACE_WITH_YOUR_DEEPSEEK_API_KEY",
+)
 DEEPSEEK_API_URL = os.environ.get("DEEPSEEK_API_URL", "https://api.deepseek.com/v1/chat/completions")
 DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
 DEEPSEEK_TIMEOUT_SECONDS = 60
 
 
 def is_deepseek_configured() -> bool:
-    return bool(DEEPSEEK_API_KEY.strip())
+    return bool(
+        DEEPSEEK_API_KEY.strip()
+        and DEEPSEEK_API_KEY != "REPLACE_WITH_YOUR_DEEPSEEK_API_KEY"
+    )
 
 def call_deepseek(
     system_prompt: str,

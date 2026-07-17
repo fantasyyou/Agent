@@ -42,6 +42,7 @@ func main() {
 	configPath := flag.String("config", "config.json", "configuration file")
 	sessionID := flag.String("session", "demo-user", "conversation session ID")
 	question := flag.String("question", "", "single question; omit for interactive mode")
+	listenAddr := flag.String("listen", "", "HTTP listen address, for example :8080")
 	flag.Parse()
 
 	cfg, err := LoadConfig(*configPath)
@@ -61,6 +62,12 @@ func main() {
 	defer agent.Close()
 
 	service := &CustomerService{memory: memory, agent: agent, limit: cfg.Memory.RecallLimit}
+	if strings.TrimSpace(*listenAddr) != "" {
+		if err := RunHTTPServer(*listenAddr, service); err != nil {
+			exitWithError(err)
+		}
+		return
+	}
 	if strings.TrimSpace(*question) != "" {
 		answer, err := service.Ask(ctx, *sessionID, *question)
 		if err != nil {
