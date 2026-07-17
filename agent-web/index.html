@@ -7,17 +7,31 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <main class="chat-shell">
+  <section id="auth-view" class="auth-card">
+    <div class="brand">安</div>
+    <h1>安心金融客服</h1>
+    <p>登录后开始咨询</p>
+    <div class="tabs"><button id="login-tab" class="active" type="button">登录</button><button id="register-tab" type="button">注册</button></div>
+    <form id="auth-form">
+      <label>账号<input id="username" autocomplete="username" minlength="3" maxlength="32" pattern="[A-Za-z0-9_-]+" required></label>
+      <label>密码<input id="password" type="password" autocomplete="current-password" minlength="8" maxlength="72" required></label>
+      <p id="auth-error" class="error"></p>
+      <button id="auth-submit" class="primary" type="submit">登录</button>
+    </form>
+  </section>
+
+  <main id="chat-view" class="chat-shell hidden">
     <header class="chat-header">
       <div class="agent-avatar">安</div>
-      <div><h1>安心金融客服</h1><p><span class="online-dot"></span>智能客服在线</p></div>
+      <div class="header-title"><h1>安心金融客服</h1><p><span class="online-dot"></span>智能客服在线</p></div>
+      <div class="account"><span id="current-user"></span><button id="logout" type="button">退出</button></div>
     </header>
     <section id="messages" class="messages" aria-live="polite">
       <div class="message assistant"><div class="avatar">安</div><div class="bubble">您好，我是安心金融客服。请问有什么可以帮助您？</div></div>
     </section>
     <form id="chat-form" class="composer">
       <textarea id="question" rows="1" maxlength="2000" placeholder="请输入您的问题…" aria-label="输入问题" required></textarea>
-      <button id="send" type="submit">发送</button>
+      <button id="send" class="primary" type="submit">发送</button>
     </form>
     <footer>回答由人工智能生成，涉及账户和交易信息请以业务系统为准</footer>
   </main>

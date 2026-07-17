@@ -17,6 +17,7 @@ PYTHON_CONTAINER="agent-app"
 GO_CONTAINER="agent-go"
 WEB_CONTAINER="agent-web"
 ES_CONTAINER="es"
+MYSQL_CONTAINER="${MYSQL_CONTAINER_NAME:-mysql}"
 WEB_PORT="${WEB_PORT:-8081}"
 PYTHON_DEBUG_PORT="${PYTHON_DEBUG_PORT:-8080}"
 
@@ -38,6 +39,34 @@ if ! docker network inspect -f '{{range .Containers}}{{.Name}} {{end}}' "$NETWOR
   docker network connect "$NETWORK_NAME" "$ES_CONTAINER"
 fi
 
+# MySQL is stateful and independently managed, like Elasticsearch.
+if ! docker container inspect "$MYSQL_CONTAINER" >/dev/null 2>&1; then
+  echo "MySQL container '$MYSQL_CONTAINER' does not exist. Create it using 虚拟机初始化操作.md." >&2
+  exit 1
+fi
+if [[ "$(docker inspect -f '{{.State.Running}}' "$MYSQL_CONTAINER")" != "true" ]]; then
+  echo "MySQL container '$MYSQL_CONTAINER' exists but is not running." >&2
+  exit 1
+fi
+if ! docker network inspect -f '{{range .Containers}}{{.Name}} {{end}}' "$NETWORK_NAME" | grep -qw "$MYSQL_CONTAINER"; then
+  docker network connect "$NETWORK_NAME" "$MYSQL_CONTAINER"
+fi
+
+echo "Waiting for MySQL..."
+MYSQL_READY=false
+for _ in $(seq 1 60); do
+  if docker exec "$MYSQL_CONTAINER" mysqladmin ping -uroot -p"${MYSQL_ROOT_PASSWORD:-mysql-root-password}" --silent >/dev/null 2>&1; then
+    MYSQL_READY=true
+    break
+  fi
+  sleep 2
+done
+if [[ "$MYSQL_READY" != "true" ]]; then
+  echo "MySQL did not become ready in time." >&2
+  docker logs --tail 50 "$MYSQL_CONTAINER" >&2 || true
+  exit 1
+fi
+
 echo "Waiting for Elasticsearch port 9200..."
 ES_READY=false
 for _ in $(seq 1 60); do
@@ -57,8 +86,8 @@ docker build -t agent-python:latest "$ROOT_DIR/agent-python"
 docker build -t agent-go:latest "$ROOT_DIR/agent-go"
 docker build -t agent-web:latest "$ROOT_DIR/agent-web"
 
-# Only recreate the three stateless application containers. Elasticsearch and
-# Redis remain independently managed and their data is untouched.
+# Only recreate the three stateless application containers. MySQL and
+# Elasticsearch remain independently managed and their data is untouched.
 docker rm -f "$WEB_CONTAINER" "$GO_CONTAINER" "$PYTHON_CONTAINER" >/dev/null 2>&1 || true
 
 docker run -d \
@@ -69,12 +98,16 @@ docker run -d \
   -e DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY" \
   -e DEEPSEEK_API_URL="${DEEPSEEK_API_URL:-https://api.deepseek.com/v1/chat/completions}" \
   -e DEEPSEEK_MODEL="${DEEPSEEK_MODEL:-deepseek-chat}" \
+  -e LOG_LEVEL="${PYTHON_LOG_LEVEL:-INFO}" \
   agent-python:latest
 
 docker run -d \
   --name "$GO_CONTAINER" \
   --network "$NETWORK_NAME" \
   --restart unless-stopped \
+  -e MYSQL_DSN="${MYSQL_DSN:-agent_user:agent-password@tcp(mysql:3306)/agent?parseTime=true&charset=utf8mb4&loc=UTC}" \
+  -e AUTH_SIGNING_SECRET="${AUTH_SIGNING_SECRET:-demo-only-change-this-signing-secret-32-chars}" \
+  -e LOG_LEVEL="${GO_LOG_LEVEL:-INFO}" \
   -v "$ROOT_DIR/agent-go/config.json:/app/config.json:ro" \
   agent-go:latest
 

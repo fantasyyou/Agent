@@ -4,7 +4,7 @@ WORKDIR /src
 ENV GOPROXY=https://goproxy.cn|https://goproxy.io|direct
 COPY go.mod go.sum ./
 RUN go mod download
-COPY *.go ./
+COPY . ./
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/agent-go .
 
 FROM alpine:3.21

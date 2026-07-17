@@ -1,17 +1,29 @@
 {
+  "mysql": {
+    "dsn": "agent_user:agent-password@tcp(mysql:3306)/agent?parseTime=true&charset=utf8mb4&loc=UTC",
+    "max_open_connections": 20,
+    "max_idle_connections": 5,
+    "connection_max_lifetime": "5m"
+  },
   "elasticsearch": {
     "addresses": ["http://es:9200"],
     "username": "elastic",
     "password": "elastic",
     "api_key": "",
-    "index": "agent-conversation-memory-v1",
     "timeout": "10s"
+  },
+  "indices": {
+    "conversation_memory": "agent-conversation-memory-v2"
+  },
+  "auth": {
+    "signing_secret": "demo-only-change-this-signing-secret-32-chars",
+    "cookie_name": "agent_session",
+    "ttl": "24h",
+    "secure_cookie": false
   },
   "python_agent": {
     "address": "agent-app:8765",
     "timeout": "60s"
   },
-  "memory": {
-    "recall_limit": 5
-  }
+  "memory": { "recall_limit": 5 }
 }
