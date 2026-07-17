@@ -13,10 +13,10 @@ fi
 : "${DEEPSEEK_API_KEY:?Set DEEPSEEK_API_KEY in $ROOT_DIR/agent-python/.env}"
 
 NETWORK_NAME="${AGENT_NETWORK_NAME:-agent-network}"
-PYTHON_CONTAINER="${PYTHON_CONTAINER_NAME:-agent-app}"
-GO_CONTAINER="${GO_CONTAINER_NAME:-agent-go}"
-WEB_CONTAINER="${WEB_CONTAINER_NAME:-agent-web}"
-ES_CONTAINER="${ES_CONTAINER_NAME:-es}"
+PYTHON_CONTAINER="agent-app"
+GO_CONTAINER="agent-go"
+WEB_CONTAINER="agent-web"
+ES_CONTAINER="es"
 WEB_PORT="${WEB_PORT:-8081}"
 PYTHON_DEBUG_PORT="${PYTHON_DEBUG_PORT:-8080}"
 
@@ -28,6 +28,10 @@ fi
 # container to the application network without restarting or recreating it.
 if ! docker container inspect "$ES_CONTAINER" >/dev/null 2>&1; then
   echo "Elasticsearch container '$ES_CONTAINER' is not running or does not exist." >&2
+  exit 1
+fi
+if [[ "$(docker inspect -f '{{.State.Running}}' "$ES_CONTAINER")" != "true" ]]; then
+  echo "Elasticsearch container '$ES_CONTAINER' exists but is not running." >&2
   exit 1
 fi
 if ! docker network inspect -f '{{range .Containers}}{{.Name}} {{end}}' "$NETWORK_NAME" | grep -qw "$ES_CONTAINER"; then
@@ -56,7 +60,6 @@ docker run -d \
   --name "$GO_CONTAINER" \
   --network "$NETWORK_NAME" \
   --restart unless-stopped \
-  -p "${WEB_PORT}:8080" \
   -v "$ROOT_DIR/agent-go/config.json:/app/config.json:ro" \
   agent-go:latest
 
