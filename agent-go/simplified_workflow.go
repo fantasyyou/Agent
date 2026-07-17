@@ -1,144 +1,102 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
+	"bufio"
+	"context"
+	"flag"
 	"fmt"
-	"net/http"
 	"os"
-	"sync"
+	"strings"
 	"time"
 )
 
-const agentServiceURL = "http://127.0.0.1:8765"
-
-type AgentResult struct {
-	Role   string                 `json:"role"`
-	Symbol string                 `json:"symbol"`
-	Date   string                 `json:"date"`
-	Report string                 `json:"report"`
-	Data   map[string]interface{} `json:"data"`
+type CustomerService struct {
+	memory *ESMemory
+	agent  *PythonAgentClient
+	limit  int
 }
 
-func callAgentService(role, symbol, date string, deps map[string]interface{}) (AgentResult, error) {
-	reqBody := map[string]interface{}{
-		"role":   role,
-		"symbol": symbol,
-		"date":   date,
-	}
-	if deps != nil {
-		reqBody["deps"] = deps
-	}
-
-	payload, err := json.Marshal(reqBody)
+func (s *CustomerService) Ask(ctx context.Context, sessionID, question string) (string, error) {
+	memories, err := s.memory.Search(ctx, sessionID, question, s.limit)
 	if err != nil {
-		return AgentResult{}, fmt.Errorf("marshal %s request: %w", role, err)
+		return "", fmt.Errorf("search memory: %w", err)
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Post(agentServiceURL+"/agent", "application/json", bytes.NewReader(payload))
+	answer, err := s.agent.Answer(ctx, sessionID, question, memories)
 	if err != nil {
-		return AgentResult{}, fmt.Errorf("call agent service %s: %w", role, err)
-	}
-	defer resp.Body.Close()
-
-	var output bytes.Buffer
-	if _, err := output.ReadFrom(resp.Body); err != nil {
-		return AgentResult{}, fmt.Errorf("read agent service %s response: %w", role, err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return AgentResult{}, fmt.Errorf("agent service %s returned %s: %s", role, resp.Status, output.String())
+		return "", fmt.Errorf("call Python agent: %w", err)
 	}
 
-	var result AgentResult
-	if err := json.Unmarshal(output.Bytes(), &result); err != nil {
-		return AgentResult{}, fmt.Errorf("decode agent service %s output: %w, output: %s", role, err, output.String())
+	if err := s.memory.Store(ctx, Memory{
+		SessionID:       sessionID,
+		UserQuestion:    question,
+		AssistantAnswer: answer,
+		CreatedAt:       time.Now().UTC(),
+	}); err != nil {
+		return "", fmt.Errorf("store memory: %w", err)
 	}
-
-	return result, nil
-}
-
-func callAgentAsync(role, symbol, date string, wg *sync.WaitGroup, ch chan<- AgentResult, errCh chan<- error) {
-	defer wg.Done()
-
-	result, err := callAgentService(role, symbol, date, nil)
-	if err != nil {
-		errCh <- err
-		return
-	}
-	ch <- result
-}
-
-func renderReport(marketR, fundR, finalR AgentResult) {
-	fmt.Println("====== Market Analyst ======")
-	fmt.Println(marketR.Report)
-	fmt.Println()
-
-	fmt.Println("====== Fundamental Analyst ======")
-	fmt.Println(fundR.Report)
-	fmt.Println()
-
-	fmt.Println("====== Final Report ======")
-	fmt.Println(finalR.Report)
-}
-
-func RunSimplifiedWorkflow(symbol, date string) error {
-	// 1. 准备数据由 Python 侧模拟采集。
-
-	// 2. 并行调用两个分析师（Goroutine）。
-	var wg sync.WaitGroup
-	resultCh := make(chan AgentResult, 2)
-	errCh := make(chan error, 2)
-
-	wg.Add(2)
-	go callAgentAsync("market", symbol, date, &wg, resultCh, errCh)
-	go callAgentAsync("fundamental", symbol, date, &wg, resultCh, errCh)
-	wg.Wait()
-	close(resultCh)
-	close(errCh)
-
-	if len(errCh) > 0 {
-		return <-errCh
-	}
-
-	var marketR AgentResult
-	var fundR AgentResult
-	for result := range resultCh {
-		switch result.Role {
-		case "market":
-			marketR = result
-		case "fundamental":
-			fundR = result
-		}
-	}
-
-	// 3. 串行调用投资经理（依赖上面两份报告）。
-	deps := map[string]interface{}{
-		"market_report":      marketR.Report,
-		"fundamental_report": fundR.Report,
-	}
-	finalR, err := callAgentService("final", symbol, date, deps)
-	if err != nil {
-		return err
-	}
-
-	// 4. 输出报告。
-	renderReport(marketR, fundR, finalR)
-	return nil
+	return answer, nil
 }
 
 func main() {
-	symbol := "002607.SZ"
-	tradeDate := "2025-12-31"
-	if len(os.Args) > 1 {
-		symbol = os.Args[1]
-	}
-	if len(os.Args) > 2 {
-		tradeDate = os.Args[2]
+	configPath := flag.String("config", "config.json", "configuration file")
+	sessionID := flag.String("session", "demo-user", "conversation session ID")
+	question := flag.String("question", "", "single question; omit for interactive mode")
+	flag.Parse()
+
+	cfg, err := LoadConfig(*configPath)
+	if err != nil {
+		exitWithError(err)
 	}
 
-	if err := RunSimplifiedWorkflow(symbol, tradeDate); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+	ctx := context.Background()
+	memory := NewESMemory(cfg.Elasticsearch)
+	if err := memory.EnsureIndex(ctx); err != nil {
+		exitWithError(fmt.Errorf("initialize Elasticsearch memory index: %w", err))
 	}
+	agent, err := NewPythonAgentClient(cfg.PythonAgent)
+	if err != nil {
+		exitWithError(err)
+	}
+	defer agent.Close()
+
+	service := &CustomerService{memory: memory, agent: agent, limit: cfg.Memory.RecallLimit}
+	if strings.TrimSpace(*question) != "" {
+		answer, err := service.Ask(ctx, *sessionID, *question)
+		if err != nil {
+			exitWithError(err)
+		}
+		fmt.Println(answer)
+		return
+	}
+
+	fmt.Printf("客服已启动（session=%s，输入 exit 退出）\n", *sessionID)
+	scanner := bufio.NewScanner(os.Stdin)
+	for {
+		fmt.Print("> ")
+		if !scanner.Scan() {
+			break
+		}
+		text := strings.TrimSpace(scanner.Text())
+		if text == "" {
+			continue
+		}
+		if strings.EqualFold(text, "exit") || strings.EqualFold(text, "quit") {
+			break
+		}
+		answer, err := service.Ask(ctx, *sessionID, text)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "错误:", err)
+			continue
+		}
+		fmt.Println(answer)
+	}
+	if err := scanner.Err(); err != nil {
+		exitWithError(err)
+	}
+}
+
+func exitWithError(err error) {
+	fmt.Fprintln(os.Stderr, "错误:", err)
+	os.Exit(1)
 }

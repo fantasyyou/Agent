@@ -1,0 +1,17 @@
+{
+  "elasticsearch": {
+    "addresses": ["http://192.168.1.104:9200/"],
+    "username": "elastic",
+    "password": "elastic",
+    "api_key": "",
+    "index": "agent-conversation-memory-v1",
+    "timeout": "10s"
+  },
+  "python_agent": {
+    "address": "127.0.0.1:8765",
+    "timeout": "60s"
+  },
+  "memory": {
+    "recall_limit": 5
+  }
+}

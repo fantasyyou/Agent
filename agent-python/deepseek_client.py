@@ -6,7 +6,7 @@ import urllib.request
 from typing import Any
 
 
-# Put your key here, or set DEEPSEEK_API_KEY in the environment.
+# Secrets must only be supplied through the environment.
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 DEEPSEEK_API_URL = os.environ.get("DEEPSEEK_API_URL", "https://api.deepseek.com/v1/chat/completions")
 DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")

@@ -1,4 +1,3 @@
-# 使用官方 Python 基础镜像
 FROM python:3.10-slim
 
 # 设置工作目录
@@ -14,14 +13,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 复制所有 Python 文件
-COPY *.py ./
+COPY customer_service.py deepseek_client.py ./
 
-# 复制 data 目录（静态打包进镜像）
-COPY data/ ./data/
-
-# 暴露端口（8765）
 EXPOSE 8765
 
-# 设置容器启动命令（你的完整启动命令）
-CMD ["python", "deepseek_agent.py", "--serve", "--host", "0.0.0.0", "--port", "8765"]
+CMD ["python", "customer_service.py", "--host", "0.0.0.0", "--port", "8765"]

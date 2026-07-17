@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package customer;
+
+import "google/protobuf/struct.proto";
+
+// Struct avoids generated application stubs while retaining protobuf/gRPC.
+service CustomerService {
+  rpc Answer(google.protobuf.Struct) returns (google.protobuf.Struct);
+}
