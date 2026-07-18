@@ -46,6 +46,20 @@ type AgentRequest struct {
 	Question string
 	// Memories 是 Go 完成鉴权和数量限制后召回的 Top-N 条记忆。
 	Memories []ConversationMemory
+	// DialogueState 是 Go 从 Redis 读取的当前多轮任务状态。
+	DialogueState *DialogueState
+}
+
+// DialogueState 表示一个会话正在收集的短期业务参数，不属于长期用户记忆。
+type DialogueState struct {
+	// Intent 是当前正在处理的工作流意图。
+	Intent string `json:"intent"`
+	// Slots 是已经通过Python规则校验的参数集合。
+	Slots map[string]any `json:"slots"`
+	// Status 是当前流程状态，例如 need_clarification。
+	Status string `json:"status"`
+	// LastQuestion 是上一轮客服提出的问题，用于避免重复追问。
+	LastQuestion string `json:"last_question"`
 }
 
 // AgentResponse 表示 Python 推理服务返回的回答和模型计量信息。
@@ -66,4 +80,8 @@ type AgentResponse struct {
 	TotalTokens int64
 	// LatencyMS 是模型供应商接口调用耗时，单位为毫秒。
 	LatencyMS int64
+	// DialogueState 是本轮后需要写回 Redis 的新状态。
+	DialogueState *DialogueState
+	// ClearDialogueState 表示工作流已经完成，应删除Redis短期状态。
+	ClearDialogueState bool
 }

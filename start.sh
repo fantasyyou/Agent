@@ -18,6 +18,7 @@ GO_CONTAINER="agent-go"
 WEB_CONTAINER="agent-web"
 ES_CONTAINER="es"
 MYSQL_CONTAINER="${MYSQL_CONTAINER_NAME:-mysql}"
+REDIS_CONTAINER="${REDIS_CONTAINER_NAME:-agent-redis}"
 WEB_PORT="${WEB_PORT:-8081}"
 PYTHON_DEBUG_PORT="${PYTHON_DEBUG_PORT:-8080}"
 
@@ -52,6 +53,19 @@ if ! docker network inspect -f '{{range .Containers}}{{.Name}} {{end}}' "$NETWOR
   docker network connect "$NETWORK_NAME" "$MYSQL_CONTAINER"
 fi
 
+# Redis stores short-lived workflow state and is managed independently.
+if ! docker container inspect "$REDIS_CONTAINER" >/dev/null 2>&1; then
+  echo "Redis container '$REDIS_CONTAINER' does not exist. Create it using 虚拟机初始化操作.md." >&2
+  exit 1
+fi
+if [[ "$(docker inspect -f '{{.State.Running}}' "$REDIS_CONTAINER")" != "true" ]]; then
+  echo "Redis container '$REDIS_CONTAINER' exists but is not running." >&2
+  exit 1
+fi
+if ! docker network inspect -f '{{range .Containers}}{{.Name}} {{end}}' "$NETWORK_NAME" | grep -qw "$REDIS_CONTAINER"; then
+  docker network connect "$NETWORK_NAME" "$REDIS_CONTAINER"
+fi
+
 echo "Waiting for MySQL..."
 MYSQL_READY=false
 for _ in $(seq 1 60); do
@@ -64,6 +78,21 @@ done
 if [[ "$MYSQL_READY" != "true" ]]; then
   echo "MySQL did not become ready in time." >&2
   docker logs --tail 50 "$MYSQL_CONTAINER" >&2 || true
+  exit 1
+fi
+
+echo "Waiting for Redis..."
+REDIS_READY=false
+for _ in $(seq 1 60); do
+  if docker exec "$REDIS_CONTAINER" redis-cli -a "${REDIS_PASSWORD:-replace-with-a-strong-redis-password}" ping 2>/dev/null | grep -q PONG; then
+    REDIS_READY=true
+    break
+  fi
+  sleep 2
+done
+if [[ "$REDIS_READY" != "true" ]]; then
+  echo "Redis did not become ready in time." >&2
+  docker logs --tail 50 "$REDIS_CONTAINER" >&2 || true
   exit 1
 fi
 
@@ -107,6 +136,8 @@ docker run -d \
   --restart unless-stopped \
   -e MYSQL_DSN="${MYSQL_DSN:-agent_user:agent-password@tcp(mysql:3306)/agent?parseTime=true&charset=utf8mb4&loc=UTC}" \
   -e AUTH_SIGNING_SECRET="${AUTH_SIGNING_SECRET:-demo-only-change-this-signing-secret-32-chars}" \
+  -e REDIS_ADDRESS="${REDIS_CONTAINER}:6379" \
+  -e REDIS_PASSWORD="${REDIS_PASSWORD:-replace-with-a-strong-redis-password}" \
   -e LOG_LEVEL="${GO_LOG_LEVEL:-INFO}" \
   -v "$ROOT_DIR/agent-go/config.json:/app/config.json:ro" \
   agent-go:latest

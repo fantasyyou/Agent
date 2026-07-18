@@ -23,7 +23,7 @@ class GRPCCustomerController:
 
     def answer(self, request: struct_pb2.Struct, context: grpc.ServicerContext) -> struct_pb2.Struct:
         started = time.monotonic()
-        payload: dict[str, Any] = dict(request)
+        payload: dict[str, Any] = request.AsMap()
         question = str(payload.get("question", "")).strip()
         if not question:
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, "question is required")
@@ -41,6 +41,7 @@ class GRPCCustomerController:
             session_id=str(payload.get("session_id", "")),
             question=question,
             memories=memories,
+            dialogue_state=payload.get("dialogue_state") if isinstance(payload.get("dialogue_state"), dict) else {},
         )
         logger.info(
             "grpc_request_started",
@@ -79,6 +80,8 @@ class GRPCCustomerController:
             "output_tokens": result.usage.output_tokens,
             "total_tokens": result.usage.total_tokens,
             "latency_ms": result.usage.latency_ms,
+            "dialogue_state": result.dialogue_state,
+            "clear_dialogue_state": result.clear_dialogue_state,
         })
         return response
 

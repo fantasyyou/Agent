@@ -6,6 +6,7 @@ import (
 	"agent-go/controller"
 	esdao "agent-go/dao/elasticsearch"
 	mysqldao "agent-go/dao/mysql"
+	redisdao "agent-go/dao/redis"
 	"agent-go/service"
 	"context"
 	"flag"
@@ -38,6 +39,12 @@ func main() {
 		exit(fmt.Errorf("initialize Elasticsearch memory index: %w", err))
 	}
 	slog.Info("dependency_ready", "dependency", "elasticsearch", "index", cfg.Indices.ConversationMemory)
+	stateDAO := redisdao.NewDialogueStateDAO(cfg.Redis)
+	defer stateDAO.Close()
+	if err := stateDAO.Ping(ctx); err != nil {
+		exit(err)
+	}
+	slog.Info("dependency_ready", "dependency", "redis", "address", cfg.Redis.Address)
 	python, err := client.NewPythonAgent(cfg.PythonAgent)
 	if err != nil {
 		exit(err)
@@ -45,7 +52,7 @@ func main() {
 	defer python.Close()
 	slog.Info("dependency_configured", "dependency", "python_grpc", "address", cfg.PythonAgent.Address)
 	authService := service.NewAuthService(mysqldao.NewUserDAO(db), cfg.Auth)
-	chatService := service.NewChatService(memoryDAO, mysqldao.NewSessionDAO(db), mysqldao.NewUsageDAO(db), python, cfg.Memory.RecallLimit)
+	chatService := service.NewChatService(memoryDAO, mysqldao.NewSessionDAO(db), mysqldao.NewUsageDAO(db), stateDAO, python, cfg.Memory.RecallLimit)
 	if err := controller.NewServer(authService, chatService, cfg.Auth).Run(*listenAddr); err != nil {
 		exit(err)
 	}

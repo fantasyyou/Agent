@@ -15,6 +15,7 @@ type Config struct {
 	Auth          AuthConfig          `json:"auth"`
 	PythonAgent   PythonAgentConfig   `json:"python_agent"`
 	Memory        MemoryConfig        `json:"memory"`
+	Redis         RedisConfig         `json:"redis"`
 }
 
 type MySQLConfig struct {
@@ -46,6 +47,13 @@ type PythonAgentConfig struct {
 type MemoryConfig struct {
 	RecallLimit int `json:"recall_limit"`
 }
+type RedisConfig struct {
+	Address  string `json:"address"`
+	Password string `json:"password"`
+	DB       int    `json:"db"`
+	Timeout  string `json:"timeout"`
+	StateTTL string `json:"state_ttl"`
+}
 
 func Load(path string) (Config, error) {
 	data, err := os.ReadFile(path)
@@ -62,6 +70,12 @@ func Load(path string) (Config, error) {
 	if value := os.Getenv("AUTH_SIGNING_SECRET"); value != "" {
 		cfg.Auth.SigningSecret = value
 	}
+	if value := os.Getenv("REDIS_ADDRESS"); value != "" {
+		cfg.Redis.Address = value
+	}
+	if value := os.Getenv("REDIS_PASSWORD"); value != "" {
+		cfg.Redis.Password = value
+	}
 	if cfg.MySQL.DSN == "" {
 		return Config{}, fmt.Errorf("mysql.dsn is required")
 	}
@@ -77,6 +91,12 @@ func Load(path string) (Config, error) {
 	if cfg.PythonAgent.Address == "" {
 		return Config{}, fmt.Errorf("python_agent.address is required")
 	}
+	if cfg.Redis.Address == "" {
+		return Config{}, fmt.Errorf("redis.address is required")
+	}
+	if cfg.Redis.StateTTL == "" {
+		cfg.Redis.StateTTL = "30m"
+	}
 	if cfg.Memory.RecallLimit <= 0 {
 		cfg.Memory.RecallLimit = 5
 	}
@@ -86,7 +106,7 @@ func Load(path string) (Config, error) {
 	if cfg.MySQL.MaxIdleConnections <= 0 {
 		cfg.MySQL.MaxIdleConnections = 5
 	}
-	for name, value := range map[string]string{"mysql.connection_max_lifetime": cfg.MySQL.ConnectionMaxLifetime, "elasticsearch.timeout": cfg.Elasticsearch.Timeout, "auth.ttl": cfg.Auth.TTL, "python_agent.timeout": cfg.PythonAgent.Timeout} {
+	for name, value := range map[string]string{"mysql.connection_max_lifetime": cfg.MySQL.ConnectionMaxLifetime, "elasticsearch.timeout": cfg.Elasticsearch.Timeout, "auth.ttl": cfg.Auth.TTL, "python_agent.timeout": cfg.PythonAgent.Timeout, "redis.timeout": cfg.Redis.Timeout, "redis.state_ttl": cfg.Redis.StateTTL} {
 		if value != "" {
 			if _, err := time.ParseDuration(value); err != nil {
 				return Config{}, fmt.Errorf("invalid %s: %w", name, err)

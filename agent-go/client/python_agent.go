@@ -32,7 +32,11 @@ func (c *PythonAgent) Answer(ctx context.Context, input model.AgentRequest) (mod
 	for _, memory := range input.Memories {
 		memories = append(memories, map[string]any{"user_question": memory.UserQuestion, "assistant_answer": memory.AssistantAnswer, "created_at": memory.CreatedAt.Format(time.RFC3339)})
 	}
-	req, err := structpb.NewStruct(map[string]any{"request_id": input.RequestID, "user_id": input.UserID, "session_id": input.SessionID, "question": input.Question, "memories": memories})
+	dialogueState := map[string]any{}
+	if input.DialogueState != nil {
+		dialogueState = map[string]any{"intent": input.DialogueState.Intent, "slots": input.DialogueState.Slots, "status": input.DialogueState.Status, "last_question": input.DialogueState.LastQuestion}
+	}
+	req, err := structpb.NewStruct(map[string]any{"request_id": input.RequestID, "user_id": input.UserID, "session_id": input.SessionID, "question": input.Question, "memories": memories, "dialogue_state": dialogueState})
 	if err != nil {
 		return model.AgentResponse{}, err
 	}
@@ -47,7 +51,23 @@ func (c *PythonAgent) Answer(ctx context.Context, input model.AgentRequest) (mod
 	if answer == "" {
 		return model.AgentResponse{}, fmt.Errorf("Python agent returned an empty answer")
 	}
-	return model.AgentResponse{Answer: answer, Provider: stringValue(values, "provider"), Model: stringValue(values, "model"), InputTokens: intValue(values, "input_tokens"), CachedTokens: intValue(values, "cached_tokens"), OutputTokens: intValue(values, "output_tokens"), TotalTokens: intValue(values, "total_tokens"), LatencyMS: intValue(values, "latency_ms")}, nil
+	var state *model.DialogueState
+	if raw, ok := values["dialogue_state"].(map[string]any); ok && len(raw) > 0 {
+		state = &model.DialogueState{Intent: stringMapValue(raw, "intent"), Slots: mapValue(raw, "slots"), Status: stringMapValue(raw, "status"), LastQuestion: stringMapValue(raw, "last_question")}
+	}
+	clearState, _ := values["clear_dialogue_state"].(bool)
+	return model.AgentResponse{Answer: answer, Provider: stringValue(values, "provider"), Model: stringValue(values, "model"), InputTokens: intValue(values, "input_tokens"), CachedTokens: intValue(values, "cached_tokens"), OutputTokens: intValue(values, "output_tokens"), TotalTokens: intValue(values, "total_tokens"), LatencyMS: intValue(values, "latency_ms"), DialogueState: state, ClearDialogueState: clearState}, nil
+}
+func stringMapValue(values map[string]any, key string) string {
+	value, _ := values[key].(string)
+	return value
+}
+func mapValue(values map[string]any, key string) map[string]any {
+	value, _ := values[key].(map[string]any)
+	if value == nil {
+		return map[string]any{}
+	}
+	return value
 }
 func stringValue(values map[string]any, key string) string {
 	value, _ := values[key].(string)

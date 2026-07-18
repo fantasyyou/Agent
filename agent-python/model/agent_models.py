@@ -24,6 +24,7 @@ class AnswerRequest:
     session_id: str  # 当前客服会话的唯一标识。
     question: str  # 用户本次提交的问题。
     memories: list[ConversationMemory] = field(default_factory=list)  # Go 完成权限过滤后提供的 Top-N 条记忆。
+    dialogue_state: dict = field(default_factory=dict)  # Go 从 Redis 读取的当前任务状态；为空表示尚未进入工作流。
 
 
 @dataclass(frozen=True)
@@ -45,3 +46,5 @@ class AnswerResponse:
 
     answer: str  # 模型生成的最终客服回答。
     usage: ModelUsage  # 需要由 Go 持久化到 MySQL 的模型计量信息。
+    dialogue_state: dict = field(default_factory=dict)  # 本轮完成后需要由 Go 写回 Redis 的短期任务状态。
+    clear_dialogue_state: bool = False  # 是否删除当前会话的短期任务状态。

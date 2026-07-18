@@ -5,10 +5,13 @@ import logging
 import os
 
 from client.deepseek_client import DeepSeekClient
+from client.deepseek_requirement_extractor import DeepSeekRequirementExtractor
 from controller.grpc_controller import GRPCCustomerController
 from logging_config import configure_logging
 from service.customer_service import CustomerService
 from service.prompt_service import PromptService
+from service.requirement_analysis_service import RequirementAnalysisService
+from service.workflow_catalog import default_workflows
 
 
 def main() -> None:
@@ -21,7 +24,12 @@ def main() -> None:
         "service_starting",
         extra={"host": args.host, "port": args.port, "model": os.getenv("DEEPSEEK_MODEL", "deepseek-chat")},
     )
-    service = CustomerService(PromptService(), DeepSeekClient())
+    model_client = DeepSeekClient()
+    requirement_service = RequirementAnalysisService(
+        DeepSeekRequirementExtractor(model_client),
+        default_workflows(),
+    )
+    service = CustomerService(PromptService(), model_client, requirement_service)
     GRPCCustomerController(service).serve(args.host, args.port)
 
 

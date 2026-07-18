@@ -12,6 +12,7 @@ controller -> service -> dao/model
 - `model`：带字段说明的业务模型和接口 DTO。
 - `dao/mysql`：用户、会话和模型用量。
 - `dao/elasticsearch`：可检索的问答记忆。
+- `dao/redis`：带TTL的多轮工作流状态，不保存长期用户画像。
 - `service`：认证和聊天用例。
 - `controller`：外部 HTTP 接口。
 - `client`：Python gRPC 客户端。

@@ -21,3 +21,13 @@ class PromptService:
         else:
             memory_text = "（没有召回到相关历史记忆）"
         return system_prompt, f"相关历史记忆：\n{memory_text}\n\n用户当前问题：{request.question}"
+
+    def build_workflow_answer(self, request: AnswerRequest, intent: str, slots: dict) -> tuple[str, str]:
+        """根据已经通过规则校验的工作流参数生成安全的阶段性答复。"""
+
+        system_prompt = (
+            "你是金融机构的中文客服助手。只能根据给定的已确认参数回答，不得声称已经办理业务，"
+            "不得虚构具体产品、收益率、费率或保本承诺。产品推荐场景只能总结需求并说明需要查询"
+            "机构产品库和完成适当性校验；费用查询场景应说明需要查询最新收费标准。回答简洁自然。"
+        )
+        return system_prompt, f"业务意图：{intent}\n已确认参数：{slots}\n用户当前问题：{request.question}"

@@ -5,6 +5,8 @@ Python 服务是无状态的内部 gRPC 服务，不直接连接 MySQL 或 Elast
 ```text
 controller/grpc_controller.py
         -> service/customer_service.py
+             -> service/requirement_analysis_service.py
+             -> service/question_policy.py
              -> service/prompt_service.py
              -> client/deepseek_client.py
 ```
@@ -14,4 +16,6 @@ controller/grpc_controller.py
 - `service`：Prompt 和推理流程。
 - `client`：DeepSeek HTTP 协议适配。
 
-Go 只传递当前问题和已完成权限过滤的 Top-N 记忆。Python 返回回答与供应商真实 Usage，由 Go 负责持久化。
+Go 传递当前问题、Redis短期工作流状态和已完成权限过滤的 Top-N 记忆。Python返回回答、新状态或清理标记以及供应商真实Usage，由Go负责持久化。
+
+多轮需求拆解、动态追问策略和状态边界见 [REQUIREMENT_ANALYSIS.md](REQUIREMENT_ANALYSIS.md)。

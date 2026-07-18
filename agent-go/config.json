@@ -25,5 +25,12 @@
     "address": "agent-app:8765",
     "timeout": "60s"
   },
+  "redis": {
+    "address": "agent-redis:6379",
+    "password": "replace-with-a-strong-redis-password",
+    "db": 0,
+    "timeout": "3s",
+    "state_ttl": "30m"
+  },
   "memory": { "recall_limit": 5 }
 }
