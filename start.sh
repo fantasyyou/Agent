@@ -84,7 +84,7 @@ fi
 echo "Waiting for Redis..."
 REDIS_READY=false
 for _ in $(seq 1 60); do
-  if docker exec "$REDIS_CONTAINER" redis-cli -a "${REDIS_PASSWORD:-replace-with-a-strong-redis-password}" ping 2>/dev/null | grep -q PONG; then
+  if docker exec "$REDIS_CONTAINER" redis-cli -a "${REDIS_PASSWORD:-redus}" ping 2>/dev/null | grep -q PONG; then
     REDIS_READY=true
     break
   fi
@@ -137,7 +137,7 @@ docker run -d \
   -e MYSQL_DSN="${MYSQL_DSN:-agent_user:agent-password@tcp(mysql:3306)/agent?parseTime=true&charset=utf8mb4&loc=UTC}" \
   -e AUTH_SIGNING_SECRET="${AUTH_SIGNING_SECRET:-demo-only-change-this-signing-secret-32-chars}" \
   -e REDIS_ADDRESS="${REDIS_CONTAINER}:6379" \
-  -e REDIS_PASSWORD="${REDIS_PASSWORD:-replace-with-a-strong-redis-password}" \
+  -e REDIS_PASSWORD="${REDIS_PASSWORD:-redus}" \
   -e LOG_LEVEL="${GO_LOG_LEVEL:-INFO}" \
   -v "$ROOT_DIR/agent-go/config.json:/app/config.json:ro" \
   agent-go:latest
