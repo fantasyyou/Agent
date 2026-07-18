@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+import re
 from typing import Protocol
 
 from model.requirement_analysis_models import (
@@ -73,7 +75,14 @@ class RequirementAnalysisService:
         definitions = {definition.name: definition for definition in workflow.slots}
         combined_slots = dict(existing_slots or {})
         combined_slots.update(extraction.slots)
-        slots = {key: value for key, value in combined_slots.items() if key in definitions and _valid_slot_value(definitions[key], value)}
+        slots = {}
+        for key, value in combined_slots.items():
+            definition = definitions.get(key)
+            if definition is None:
+                continue
+            valid, normalized = _normalize_slot_value(definition, value)
+            if valid:
+                slots[key] = normalized
         missing_definitions = [
             definition
             for definition in workflow.slots
@@ -111,17 +120,72 @@ class RequirementAnalysisService:
         )
 
 
-def _valid_slot_value(definition: SlotDefinition, value) -> bool:
-    """按工作流定义校验模型提取值，避免仅凭字段存在就进入执行流程。"""
+def _normalize_slot_value(definition: SlotDefinition, value) -> tuple[bool, object]:
+    """校验并规范化模型或跨服务状态中的参数值。"""
 
     if value in (None, "", []):
-        return False
+        return False, value
     if definition.value_type == SLOT_VALUE_TYPE_STRING:
-        valid_type = isinstance(value, str)
+        normalized = value.strip() if isinstance(value, str) else value
+        valid_type = isinstance(normalized, str) and bool(normalized)
     elif definition.value_type == SLOT_VALUE_TYPE_NUMBER:
-        valid_type = isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+        normalized = _parse_positive_number(value)
+        valid_type = normalized is not None
     elif definition.value_type == SLOT_VALUE_TYPE_INTEGER:
-        valid_type = isinstance(value, int) and not isinstance(value, bool) and value > 0
+        normalized = _parse_positive_integer(value)
+        valid_type = normalized is not None
     else:
-        return False
-    return valid_type and (not definition.allowed_values or value in definition.allowed_values)
+        return False, value
+    if not valid_type or (definition.allowed_values and normalized not in definition.allowed_values):
+        return False, value
+    return True, normalized
+
+
+def _parse_positive_integer(value) -> int | None:
+    """接受protobuf产生的3.0及“3个月”“半年”“1年”等期限表达。"""
+
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value)
+    elif isinstance(value, str):
+        text = value.strip().replace(" ", "")
+        if text == "半年":
+            return 6
+        year_match = re.fullmatch(r"(\d+(?:\.\d+)?)年", text)
+        if year_match:
+            number = float(year_match.group(1)) * 12
+        else:
+            month_match = re.fullmatch(r"(\d+(?:\.\d+)?)(?:个?月)?", text)
+            if not month_match:
+                return None
+            number = float(month_match.group(1))
+    else:
+        return None
+    if not math.isfinite(number) or number <= 0 or not number.is_integer():
+        return None
+    return int(number)
+
+
+def _parse_positive_number(value) -> int | float | None:
+    """接受普通数字和“20万”“200000元”等常见人民币金额表达。"""
+
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value)
+    elif isinstance(value, str):
+        text = value.strip().replace(",", "").replace("，", "").replace(" ", "")
+        match = re.fullmatch(
+            r"(?:人民币)?([0-9]+(?:\.[0-9]+)?)([千万元亿]?)(?:人民币)?(?:元)?(?:左右)?",
+            text,
+        )
+        if not match:
+            return None
+        multiplier = {"": 1, "千": 1_000, "万": 10_000, "万元": 10_000, "亿": 100_000_000}[match.group(2)]
+        number = float(match.group(1)) * multiplier
+    else:
+        return None
+    if not math.isfinite(number) or number <= 0:
+        return None
+    return int(number) if number.is_integer() else number

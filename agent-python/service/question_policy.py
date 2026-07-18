@@ -27,12 +27,16 @@ class QuestionPolicy:
         if not candidates:
             raise ValueError("没有可提问的缺失参数")
 
+        # 上一问对应的参数仍然缺失，说明用户回答未被有效识别，应继续澄清该参数。
+        # 只有上一问已经取得有效值、从缺失列表移除后，才选择下一个问题。
+        for candidate in candidates:
+            if last_question and last_question == candidate.question:
+                return candidate
+
         def score(slot: SlotDefinition) -> int:
             value = slot.priority
             if any(keyword in user_text for keyword in self._KEYWORDS.get(slot.name, ())):
                 value += 25
-            if last_question and last_question == slot.question:
-                value -= 1000
             return value
 
         return max(candidates, key=score)

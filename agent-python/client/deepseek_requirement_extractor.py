@@ -21,7 +21,12 @@ class DeepSeekRequirementExtractor:
                 "intent": workflow.intent,
                 "description": workflow.description,
                 "slots": [
-                    {"name": slot.name, "description": slot.description}
+                    {
+                        "name": slot.name,
+                        "description": slot.description,
+                        "value_type": slot.value_type,
+                        "allowed_values": slot.allowed_values,
+                    }
                     for slot in workflow.slots
                 ],
             }
@@ -32,6 +37,8 @@ class DeepSeekRequirementExtractor:
             "只能从给定意图中选择一个；不能判断时使用 unknown。"
             "只输出一个 JSON 对象，不要输出 Markdown。JSON 字段必须为 intent、confidence、slots。"
             "confidence 必须是 0 到 1 的数字，slots 必须是对象，不得编造用户没有表达的参数。"
+            "必须严格按照参数的 value_type 和 allowed_values 返回规范值；金额统一换算成人民币元数字，"
+            "投资期限统一换算成正整数月数，例如20万返回200000，3个月返回3。"
         )
         user_prompt = (
             f"允许的意图和参数：{json.dumps(catalog, ensure_ascii=False)}\n"

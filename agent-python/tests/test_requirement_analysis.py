@@ -83,7 +83,7 @@ class RequirementAnalysisServiceTest(unittest.TestCase):
             slots={
                 "risk_tolerance": "随便",
                 "investment_amount": -1,
-                "investment_period_months": "半年",
+                "investment_period_months": "很久",
             },
         ))
         result = RequirementAnalysisService(extractor, default_workflows()).analyze("随便买一点")
@@ -110,6 +110,40 @@ class RequirementAnalysisServiceTest(unittest.TestCase):
         self.assertEqual(50000, result.slots["investment_amount"])
         self.assertEqual(["investment_period_months"], result.missing_slots)
         self.assertIn("多长时间", result.next_question)
+
+    def test_common_amount_and_period_formats_are_normalized(self) -> None:
+        period_result = RequirementAnalysisService(
+            FakeExtractor(ExtractionResult(
+                intent="product_recommendation",
+                confidence=0.95,
+                slots={"investment_period_months": "3个月"},
+            )),
+            default_workflows(),
+        ).analyze(
+            "未来3个月基本不会动用",
+            current_intent="product_recommendation",
+            existing_slots={"risk_tolerance": "conservative"},
+        )
+        self.assertEqual(3, period_result.slots["investment_period_months"])
+
+        amount_result = RequirementAnalysisService(
+            FakeExtractor(ExtractionResult(
+                intent="product_recommendation",
+                confidence=0.95,
+                slots={"investment_amount": "20万"},
+            )),
+            default_workflows(),
+        ).analyze(
+            "20万",
+            current_intent="product_recommendation",
+            existing_slots={
+                "risk_tolerance": "conservative",
+                "investment_period_months": 3.0,
+            },
+        )
+        self.assertEqual(200000, amount_result.slots["investment_amount"])
+        self.assertEqual(3, amount_result.slots["investment_period_months"])
+        self.assertEqual(ANALYSIS_STATUS_READY, amount_result.status)
 
     def test_empty_input_is_rejected_before_model_call(self) -> None:
         extractor = FakeExtractor(ExtractionResult(intent="human_service", confidence=1, slots={}))
@@ -139,7 +173,7 @@ class DeepSeekRequirementExtractorTest(unittest.TestCase):
 
 
 class QuestionPolicyTest(unittest.TestCase):
-    def test_last_question_is_not_repeated_when_another_required_slot_exists(self) -> None:
+    def test_last_question_is_repeated_when_its_slot_is_still_missing(self) -> None:
         workflow = next(item for item in default_workflows() if item.intent == "product_recommendation")
         selected = QuestionPolicy().select(
             workflow,
@@ -147,7 +181,7 @@ class QuestionPolicyTest(unittest.TestCase):
             "还没有想好",
             "这笔资金预计多长时间内不会使用？",
         )
-        self.assertEqual("investment_amount", selected.name)
+        self.assertEqual("investment_period_months", selected.name)
 
 
 if __name__ == "__main__":
