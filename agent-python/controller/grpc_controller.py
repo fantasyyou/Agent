@@ -6,7 +6,7 @@ import time
 from typing import Any
 
 import grpc
-from google.protobuf import struct_pb2
+from google.protobuf import json_format, struct_pb2
 
 from model.agent_models import AnswerRequest, ConversationMemory
 from service.customer_service import CustomerService
@@ -23,7 +23,10 @@ class GRPCCustomerController:
 
     def answer(self, request: struct_pb2.Struct, context: grpc.ServicerContext) -> struct_pb2.Struct:
         started = time.monotonic()
-        payload: dict[str, Any] = request.AsMap()
+        payload: dict[str, Any] = json_format.MessageToDict(
+            request,
+            preserving_proto_field_name=True,
+        )
         question = str(payload.get("question", "")).strip()
         if not question:
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, "question is required")
