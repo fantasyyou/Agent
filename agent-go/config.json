@@ -27,7 +27,7 @@
   },
   "redis": {
     "address": "agent-redis:6379",
-    "password": "replace-with-a-strong-redis-password",
+    "password": "redis",
     "db": 0,
     "timeout": "3s",
     "state_ttl": "30m"
