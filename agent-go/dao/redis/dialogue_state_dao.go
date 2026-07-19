@@ -47,9 +47,27 @@ func (d *DialogueStateDAO) Get(ctx context.Context, userID, sessionID string) (*
 	if err != nil {
 		return nil, fmt.Errorf("get dialogue state: %w", err)
 	}
+	return decodeDialogueState(data)
+}
+
+func decodeDialogueState(data []byte) (*model.DialogueState, error) {
 	var state model.DialogueState
-	if err := json.Unmarshal(data, &state); err != nil {
+	if err := json.Unmarshal(data, &state); err == nil && state.SchemaVersion != "" {
+		return &state, nil
+	}
+	// 兼容升级前 slots 直接保存原始值的状态；首次写回后自动升级为 v1。
+	var legacy struct {
+		Intent       string         `json:"intent"`
+		Slots        map[string]any `json:"slots"`
+		Status       string         `json:"status"`
+		LastQuestion string         `json:"last_question"`
+	}
+	if err := json.Unmarshal(data, &legacy); err != nil {
 		return nil, fmt.Errorf("decode dialogue state: %w", err)
+	}
+	state = model.DialogueState{SchemaVersion: model.DialogueSchemaVersion, Workflow: model.WorkflowState{Intent: legacy.Intent, Version: model.WorkflowVersionV1, Status: model.WorkflowStatusCollecting}, Slots: map[string]model.SlotState{}, RetryCount: map[string]int{}, LastQuestion: legacy.LastQuestion, LastAction: model.NextActionAskUser}
+	for name, value := range legacy.Slots {
+		state.Slots[name] = model.SlotState{Value: value, Status: model.SlotStatusConfirmed, Source: model.SlotSourceUser}
 	}
 	return &state, nil
 }

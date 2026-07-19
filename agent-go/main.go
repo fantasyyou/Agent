@@ -52,7 +52,8 @@ func main() {
 	defer python.Close()
 	slog.Info("dependency_configured", "dependency", "python_grpc", "address", cfg.PythonAgent.Address)
 	authService := service.NewAuthService(mysqldao.NewUserDAO(db), cfg.Auth)
-	chatService := service.NewChatService(memoryDAO, mysqldao.NewSessionDAO(db), mysqldao.NewUsageDAO(db), stateDAO, python, cfg.Memory.RecallLimit)
+	actionExecutor := service.NewActionExecutor(mysqldao.NewActionExecutionDAO(db))
+	chatService := service.NewChatService(memoryDAO, mysqldao.NewSessionDAO(db), mysqldao.NewUsageDAO(db), stateDAO, python, actionExecutor, cfg.Memory.RecallLimit)
 	if err := controller.NewServer(authService, chatService, cfg.Auth).Run(*listenAddr); err != nil {
 		exit(err)
 	}

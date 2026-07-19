@@ -1,6 +1,6 @@
 # 在线需求拆解与动态追问
 
-该模块已经接入 `CustomerService` 主链路，不需要本地模型微调。DeepSeek负责语义理解，Python代码负责约束和下一问策略，Go负责Redis状态持久化。
+该模块已经接入 `CustomerService` 主链路，不需要本地模型微调。DeepSeek负责语义理解，Python代码返回结构化建议，Go负责最终状态和动作执行。
 
 ## 责任边界
 
@@ -11,9 +11,15 @@ DeepSeekRequirementExtractor
 RequirementAnalysisService
     ├── 意图置信度阈值
     ├── 参数白名单、类型、范围和枚举校验
-    ├── 与上一轮 slots 合并
+    ├── 读取 Go 提供的 active_slot 和已确认 slots
     ├── 必填参数检查
-    └── 返回追问或工作流路由
+    └── 返回 slot_updates、status、active_slot 和 next_action
+
+Go DialogueStateService
+    ├── 合并 slot_updates
+    ├── 维护 slot_status、evidence 和 retry_count
+    ├── 写入或删除 Redis 状态
+    └── 根据 next_action 执行动作并记录结果
 
 QuestionPolicy
     └── 根据基础优先级、当前措辞和上一问动态选择缺失参数
@@ -34,10 +40,11 @@ QuestionPolicy
 ```text
 Go从Redis读取状态
 → gRPC传给Python
-→ Python提取本轮参数并与状态合并
-→ 缺参：返回下一问和新状态
-→ 完整：返回工作流回答并标记清除状态
-→ Go写回或删除Redis Key
+→ Python理解记忆并返回DialogueDecision
+→ Go合并slot_updates并维护任务工作区
+→ 缺参：Go保存状态并返回下一问
+→ 完整：Go执行next_action并删除已完成状态
+→ Go将动作结果写入MySQL
 ```
 
 Redis Key格式：
@@ -47,6 +54,8 @@ agent:dialogue:{user_id}:{session_id}
 ```
 
 默认TTL为30分钟。该状态是短期任务进度，不属于ES长期记忆。
+
+跨服务字段由根目录 `contracts/dialogue-turn.schema.json` 统一约束。
 
 ## 示例
 

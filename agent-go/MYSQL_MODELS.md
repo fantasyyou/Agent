@@ -43,9 +43,25 @@ Go 服务启动时使用 `CREATE TABLE IF NOT EXISTS` 初始化以下表。
 | `status` | 调用状态 |
 | `created_at` | 记录时间 |
 
+## action_executions
+
+| 字段 | 说明 |
+|---|---|
+| `id` | 动作执行记录ID |
+| `user_id` | 发起动作的用户 |
+| `session_id` | 所属会话 |
+| `request_id` | 跨服务请求追踪ID |
+| `intent` | Python识别的工作流意图 |
+| `action` | Python建议、Go执行的下一动作 |
+| `active_slot` | 本轮正在收集的槽位 |
+| `status` | 执行状态，可选值为 success、not_configured |
+| `result_message` | 不包含敏感信息的执行结果摘要 |
+| `created_at` | 执行时间 |
+
 验证：
 
 ```bash
 docker exec -it mysql mysql -uagent_user -pagent-password agent -e 'SHOW TABLES;'
 docker exec -it mysql mysql -uagent_user -pagent-password agent -e 'DESCRIBE model_usages;'
+docker exec -it mysql mysql -uagent_user -pagent-password agent -e 'DESCRIBE action_executions;'
 ```

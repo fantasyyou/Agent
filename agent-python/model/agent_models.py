@@ -46,5 +46,4 @@ class AnswerResponse:
 
     answer: str  # 模型生成的最终客服回答。
     usage: ModelUsage  # 需要由 Go 持久化到 MySQL 的模型计量信息。
-    dialogue_state: dict = field(default_factory=dict)  # 本轮完成后需要由 Go 写回 Redis 的短期任务状态。
-    clear_dialogue_state: bool = False  # 是否删除当前会话的短期任务状态。
+    decision: dict = field(default_factory=dict)  # Python 返回的理解结果和下一步建议，最终状态由 Go 合并。

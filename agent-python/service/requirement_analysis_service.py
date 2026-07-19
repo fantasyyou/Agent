@@ -23,7 +23,14 @@ from service.question_policy import QuestionPolicy
 class RequirementExtractor(Protocol):
     """定义自然语言结构化提取器必须实现的接口。"""
 
-    def extract(self, user_text: str, workflows: list[WorkflowDefinition]) -> ExtractionResult:
+    def extract(
+        self,
+        user_text: str,
+        workflows: list[WorkflowDefinition],
+        existing_slots: dict | None = None,
+        last_question: str = "",
+        active_slot: str = "",
+    ) -> ExtractionResult:
         """从用户原话中提取意图、置信度和参数，不执行任何业务动作。"""
 
 
@@ -48,6 +55,7 @@ class RequirementAnalysisService:
         current_intent: str | None = None,
         existing_slots: dict | None = None,
         last_question: str = "",
+        active_slot: str = "",
     ) -> RequirementAnalysisResult:
         """拆解一轮输入；追问场景可传入当前意图和之前已经收集的参数。"""
 
@@ -56,7 +64,13 @@ class RequirementAnalysisService:
             raise ValueError("用户输入不能为空")
         active_workflow = self.workflows.get(current_intent) if current_intent else None
         candidate_workflows = [active_workflow] if active_workflow else list(self.workflows.values())
-        extraction = self.extractor.extract(text, candidate_workflows)
+        extraction = self.extractor.extract(
+            text,
+            candidate_workflows,
+            existing_slots=existing_slots or {},
+            last_question=last_question,
+            active_slot=active_slot,
+        )
         confidence = min(max(float(extraction.confidence), 0.0), 1.0)
         workflow = active_workflow or self.workflows.get(extraction.intent)
         if workflow is None or (active_workflow is None and confidence < self.confidence_threshold):
@@ -69,12 +83,29 @@ class RequirementAnalysisService:
                 next_action=NEXT_ACTION_ASK_USER,
                 next_question="为了准确理解您的需求，请问您是想了解理财产品、查询业务费用，还是联系人工客服？",
                 suggested_options=["了解理财产品", "查询业务费用", "联系人工客服"],
+                active_slot="",
                 usage=extraction.usage,
             )
 
         definitions = {definition.name: definition for definition in workflow.slots}
         combined_slots = dict(existing_slots or {})
         combined_slots.update(extraction.slots)
+
+        # 用户正在回答上一轮的固定问题时，优先使用确定性解析补齐对应字段。
+        # 这样“30万”“未来3个月”等简短回答即使被模型漏提取，也不会陷入重复追问。
+        expected_definition = definitions.get(active_slot) or next(
+            (
+                definition
+                for definition in workflow.slots
+                if last_question and definition.question == last_question
+            ),
+            None,
+        )
+        if expected_definition is not None:
+            answered_value = _extract_answer_value(expected_definition, text)
+            if answered_value is not None:
+                combined_slots[expected_definition.name] = answered_value
+
         slots = {}
         for key, value in combined_slots.items():
             definition = definitions.get(key)
@@ -94,6 +125,7 @@ class RequirementAnalysisService:
                 [definition.name for definition in missing_definitions],
                 text,
                 last_question,
+                active_slot,
             )
             return RequirementAnalysisResult(
                 intent=workflow.intent,
@@ -104,6 +136,7 @@ class RequirementAnalysisService:
                 next_action=NEXT_ACTION_ASK_USER,
                 next_question=selected.question,
                 suggested_options=list(selected.options),
+                active_slot=selected.name,
                 usage=extraction.usage,
             )
 
@@ -116,6 +149,7 @@ class RequirementAnalysisService:
             next_action=NEXT_ACTION_ROUTE_WORKFLOW,
             next_question="",
             suggested_options=[],
+            active_slot="",
             usage=extraction.usage,
         )
 
@@ -189,3 +223,26 @@ def _parse_positive_number(value) -> int | float | None:
     if not math.isfinite(number) or number <= 0:
         return None
     return int(number) if number.is_integer() else number
+
+
+def _extract_answer_value(definition: SlotDefinition, user_text: str):
+    """根据上一轮明确询问的字段，从用户本轮原话中确定性提取常见回答。"""
+
+    text = user_text.strip()
+    if definition.value_type == SLOT_VALUE_TYPE_NUMBER:
+        amount_match = re.search(
+            r"(?:人民币)?\s*[0-9]+(?:\.[0-9]+)?\s*(?:亿元|万元|千元|亿|万|千|元)",
+            text,
+        )
+        candidate = amount_match.group(0) if amount_match else text
+    elif definition.value_type == SLOT_VALUE_TYPE_INTEGER:
+        period_match = re.search(
+            r"半年|[0-9]+(?:\.[0-9]+)?\s*(?:年|个?月)",
+            text,
+        )
+        candidate = period_match.group(0) if period_match else text
+    else:
+        candidate = text
+
+    valid, normalized = _normalize_slot_value(definition, candidate)
+    return normalized if valid else None

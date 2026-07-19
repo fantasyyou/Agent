@@ -14,7 +14,7 @@ class QueueExtractor:
     def __init__(self, results):
         self.results = list(results)
 
-    def extract(self, user_text, workflows):
+    def extract(self, user_text, workflows, existing_slots=None, last_question="", active_slot=""):
         return self.results.pop(0)
 
 
@@ -44,19 +44,34 @@ class CustomerServiceMultiTurnTest(unittest.TestCase):
 
         first = service.answer(AnswerRequest("r1", "u1", "s1", "我想买稳健型产品"))
         self.assertIn("多长时间", first.answer)
-        self.assertEqual("conservative", first.dialogue_state["slots"]["risk_tolerance"])
+        self.assertEqual("conservative", first.decision["slot_updates"]["risk_tolerance"]["value"])
+        first_state = {
+            "workflow": {"intent": "product_recommendation"},
+            "active_slot": first.decision["active_slot"],
+            "slots": {"risk_tolerance": first.decision["slot_updates"]["risk_tolerance"]},
+            "last_question": first.decision["next_question"],
+        }
 
         second = service.answer(AnswerRequest(
-            "r2", "u1", "s1", "半年", dialogue_state=first.dialogue_state
+            "r2", "u1", "s1", "半年", dialogue_state=first_state
         ))
         self.assertIn("金额", second.answer)
-        self.assertEqual(6, second.dialogue_state["slots"]["investment_period_months"])
+        self.assertEqual(6, second.decision["slot_updates"]["investment_period_months"]["value"])
+        second_state = {
+            "workflow": {"intent": "product_recommendation"},
+            "active_slot": second.decision["active_slot"],
+            "slots": {
+                **first_state["slots"],
+                "investment_period_months": second.decision["slot_updates"]["investment_period_months"],
+            },
+            "last_question": second.decision["next_question"],
+        }
 
         third = service.answer(AnswerRequest(
-            "r3", "u1", "s1", "十万元", dialogue_state=second.dialogue_state
+            "r3", "u1", "s1", "十万元", dialogue_state=second_state
         ))
-        self.assertTrue(third.clear_dialogue_state)
-        self.assertEqual({}, third.dialogue_state)
+        self.assertEqual("route_workflow", third.decision["next_action"])
+        self.assertEqual(100000, third.decision["slot_updates"]["investment_amount"]["value"])
         self.assertEqual(1, model_client.calls)
 
 

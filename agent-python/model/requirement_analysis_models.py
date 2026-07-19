@@ -14,6 +14,10 @@ ANALYSIS_STATUS_READY = "ready"
 NEXT_ACTION_ASK_USER = "ask_user"
 # NEXT_ACTION_ROUTE_WORKFLOW 表示下一步可以路由到确定性业务工作流。
 NEXT_ACTION_ROUTE_WORKFLOW = "route_workflow"
+# NEXT_ACTION_ANSWER_USER 表示生成普通咨询回答，不执行外部业务动作。
+NEXT_ACTION_ANSWER_USER = "answer_user"
+# NEXT_ACTION_REQUEST_HUMAN 表示请求 Go 执行转人工动作。
+NEXT_ACTION_REQUEST_HUMAN = "request_human"
 
 # SLOT_VALUE_TYPE_STRING 表示参数值必须是非空字符串。
 SLOT_VALUE_TYPE_STRING = "string"
@@ -68,4 +72,5 @@ class RequirementAnalysisResult:
     next_action: str  # 下一动作，可选值为 NEXT_ACTION_ASK_USER、NEXT_ACTION_ROUTE_WORKFLOW。
     next_question: str  # 需要追问时的固定问题；无需追问时为空字符串。
     suggested_options: list[str]  # 下一问可展示的固定选项；允许自由输入时为空列表。
+    active_slot: str = ""  # 当前需要继续收集的参数名；无需追问时为空。
     usage: ModelUsage | None = None  # 需求理解阶段对应的模型计量。

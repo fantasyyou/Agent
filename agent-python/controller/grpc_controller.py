@@ -83,8 +83,7 @@ class GRPCCustomerController:
             "output_tokens": result.usage.output_tokens,
             "total_tokens": result.usage.total_tokens,
             "latency_ms": result.usage.latency_ms,
-            "dialogue_state": result.dialogue_state,
-            "clear_dialogue_state": result.clear_dialogue_state,
+            "decision": result.decision,
         })
         return response
 

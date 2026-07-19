@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent.local/contracts/dialogue-turn.schema.json",
+  "title": "Agent dialogue turn contract",
+  "type": "object",
+  "$defs": {
+    "slotDefinition": {
+      "type": "object",
+      "required": ["name", "description", "required", "value_type", "allowed_values", "priority"],
+      "properties": {
+        "name": {"type": "string"},
+        "description": {"type": "string"},
+        "required": {"type": "boolean"},
+        "value_type": {"enum": ["string", "number", "integer"]},
+        "allowed_values": {"type": "array"},
+        "priority": {"type": "integer"}
+      },
+      "additionalProperties": false
+    },
+    "extractionResult": {
+      "type": "object",
+      "required": ["intent", "confidence", "slots"],
+      "properties": {
+        "intent": {"type": "string"},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "slots": {"type": "object"}
+      },
+      "additionalProperties": false
+    },
+    "slotState": {
+      "type": "object",
+      "required": ["value", "status", "source", "evidence", "confidence"],
+      "properties": {
+        "value": {},
+        "status": {"enum": ["empty", "extracted", "confirmed", "invalid"]},
+        "source": {"enum": ["user", "memory", "system"]},
+        "evidence": {"type": "string"},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "updated_at": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "dialogueState": {
+      "type": "object",
+      "required": ["schema_version", "workflow", "active_slot", "slots", "retry_count", "last_action", "last_question"],
+      "properties": {
+        "schema_version": {"const": "v1"},
+        "workflow": {
+          "type": "object",
+          "required": ["intent", "version", "status"],
+          "properties": {
+            "intent": {"type": "string"},
+            "version": {"type": "string"},
+            "status": {"enum": ["collecting", "ready", "completed", "cancelled"]}
+          },
+          "additionalProperties": false
+        },
+        "active_slot": {"type": "string"},
+        "slots": {"type": "object", "additionalProperties": {"$ref": "#/$defs/slotState"}},
+        "retry_count": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+        "last_action": {"type": "string"},
+        "last_question": {"type": "string"},
+        "updated_at": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "dialogueDecision": {
+      "type": "object",
+      "required": ["intent", "status", "active_slot", "slot_updates", "next_action", "next_question", "suggested_options"],
+      "properties": {
+        "intent": {"type": "string"},
+        "status": {"type": "string"},
+        "active_slot": {"type": "string"},
+        "slot_updates": {"type": "object", "additionalProperties": {"$ref": "#/$defs/slotState"}},
+        "next_action": {"enum": ["ask_user", "route_workflow", "answer_user", "request_human"]},
+        "next_question": {"type": "string"},
+        "suggested_options": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -53,6 +53,14 @@ func migrate(ctx context.Context, db *sql.DB) error {
 			INDEX idx_usage_user_created (user_id, created_at),
 			CONSTRAINT fk_usage_user FOREIGN KEY (user_id) REFERENCES users(id)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+		`CREATE TABLE IF NOT EXISTS action_executions (
+			id VARCHAR(40) PRIMARY KEY, user_id VARCHAR(40) NOT NULL, session_id VARCHAR(80) NOT NULL,
+			request_id VARCHAR(40) NOT NULL, intent VARCHAR(64) NOT NULL, action VARCHAR(32) NOT NULL,
+			active_slot VARCHAR(64) NOT NULL DEFAULT '', status VARCHAR(32) NOT NULL,
+			result_message VARCHAR(255) NOT NULL DEFAULT '', created_at DATETIME(6) NOT NULL,
+			INDEX idx_action_request (request_id), INDEX idx_action_user_created (user_id, created_at),
+			CONSTRAINT fk_action_user FOREIGN KEY (user_id) REFERENCES users(id)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 	}
 	for _, statement := range statements {
 		if _, err := db.ExecContext(ctx, statement); err != nil {

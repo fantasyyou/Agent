@@ -4,7 +4,7 @@ package customer;
 
 import "google/protobuf/struct.proto";
 
-// Struct avoids generated application stubs while retaining protobuf/gRPC.
+// 请求和响应字段由 contracts/dialogue-turn.schema.json 约束，Struct 负责跨语言传输。
 service CustomerService {
   rpc Answer(google.protobuf.Struct) returns (google.protobuf.Struct);
 }

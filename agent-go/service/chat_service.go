@@ -27,16 +27,18 @@ type DialogueStateRepository interface {
 	Delete(context.Context, string, string) error
 }
 type ChatService struct {
-	memory   MemoryRepository
-	sessions SessionRepository
-	usage    UsageRepository
-	agent    AgentClient
-	limit    int
-	states   DialogueStateRepository
+	memory       MemoryRepository
+	sessions     SessionRepository
+	usage        UsageRepository
+	agent        AgentClient
+	limit        int
+	states       DialogueStateRepository
+	stateService *DialogueStateService
+	actions      *ActionExecutor
 }
 
-func NewChatService(memory MemoryRepository, sessions SessionRepository, usage UsageRepository, states DialogueStateRepository, agent AgentClient, limit int) *ChatService {
-	return &ChatService{memory: memory, sessions: sessions, usage: usage, states: states, agent: agent, limit: limit}
+func NewChatService(memory MemoryRepository, sessions SessionRepository, usage UsageRepository, states DialogueStateRepository, agent AgentClient, actions *ActionExecutor, limit int) *ChatService {
+	return &ChatService{memory: memory, sessions: sessions, usage: usage, states: states, stateService: NewDialogueStateService(), agent: agent, actions: actions, limit: limit}
 }
 func (s *ChatService) Ask(ctx context.Context, userID, sessionID, question string) (string, error) {
 	started := time.Now()
@@ -66,16 +68,21 @@ func (s *ChatService) Ask(ctx context.Context, userID, sessionID, question strin
 		slog.Error("chat_stage_failed", "request_id", requestID, "stage", "python_agent", "error", err)
 		return "", fmt.Errorf("call Python agent: %w", err)
 	}
-	if response.ClearDialogueState {
+	nextState, completed := s.stateService.Apply(state, response.Decision, time.Now().UTC())
+	if completed {
 		if err := s.states.Delete(ctx, userID, sessionID); err != nil {
 			return "", fmt.Errorf("delete dialogue state: %w", err)
 		}
 		slog.Info("dialogue_state_deleted", "request_id", requestID)
-	} else if response.DialogueState != nil {
-		if err := s.states.Set(ctx, userID, sessionID, *response.DialogueState); err != nil {
+	} else {
+		if err := s.states.Set(ctx, userID, sessionID, nextState); err != nil {
 			return "", fmt.Errorf("store dialogue state: %w", err)
 		}
-		slog.Info("dialogue_state_stored", "request_id", requestID, "intent", response.DialogueState.Intent, "slot_count", len(response.DialogueState.Slots), "status", response.DialogueState.Status)
+		slog.Info("dialogue_state_stored", "request_id", requestID, "intent", nextState.Workflow.Intent, "active_slot", nextState.ActiveSlot, "slot_count", len(nextState.Slots), "retry_count", nextState.RetryCount[nextState.ActiveSlot])
+	}
+	if err := s.actions.Execute(ctx, userID, sessionID, requestID, response.Decision); err != nil {
+		slog.Error("chat_stage_failed", "request_id", requestID, "stage", "action_execute", "error", err)
+		return "", err
 	}
 	if err := s.memory.Store(ctx, model.ConversationMemory{UserID: userID, SessionID: sessionID, UserQuestion: question, AssistantAnswer: response.Answer, CreatedAt: time.Now().UTC()}); err != nil {
 		slog.Error("chat_stage_failed", "request_id", requestID, "stage", "memory_store", "error", err)

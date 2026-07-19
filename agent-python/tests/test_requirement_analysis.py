@@ -20,8 +20,14 @@ class FakeExtractor:
 
     def __init__(self, result: ExtractionResult) -> None:
         self.result = result
+        self.existing_slots = None
+        self.last_question = None
+        self.active_slot = None
 
-    def extract(self, user_text, workflows):
+    def extract(self, user_text, workflows, existing_slots=None, last_question="", active_slot=""):
+        self.existing_slots = existing_slots
+        self.last_question = last_question
+        self.active_slot = active_slot
         return self.result
 
 
@@ -111,6 +117,24 @@ class RequirementAnalysisServiceTest(unittest.TestCase):
         self.assertEqual(["investment_period_months"], result.missing_slots)
         self.assertIn("多长时间", result.next_question)
 
+    def test_extractor_receives_existing_slots_and_last_question(self) -> None:
+        extractor = FakeExtractor(ExtractionResult(
+            intent="product_recommendation",
+            confidence=0.95,
+            slots={"investment_amount": 300000},
+        ))
+        RequirementAnalysisService(extractor, default_workflows()).analyze(
+            "30万",
+            current_intent="product_recommendation",
+            existing_slots={"risk_tolerance": "conservative"},
+            last_question="您计划投入的大致金额是多少？",
+            active_slot="investment_amount",
+        )
+
+        self.assertEqual({"risk_tolerance": "conservative"}, extractor.existing_slots)
+        self.assertEqual("您计划投入的大致金额是多少？", extractor.last_question)
+        self.assertEqual("investment_amount", extractor.active_slot)
+
     def test_common_amount_and_period_formats_are_normalized(self) -> None:
         period_result = RequirementAnalysisService(
             FakeExtractor(ExtractionResult(
@@ -144,6 +168,43 @@ class RequirementAnalysisServiceTest(unittest.TestCase):
         self.assertEqual(200000, amount_result.slots["investment_amount"])
         self.assertEqual(3, amount_result.slots["investment_period_months"])
         self.assertEqual(ANALYSIS_STATUS_READY, amount_result.status)
+
+    def test_last_question_answer_is_parsed_when_model_omits_amount_slot(self) -> None:
+        extractor = FakeExtractor(ExtractionResult(
+            intent="product_recommendation",
+            confidence=0.95,
+            slots={},
+        ))
+        result = RequirementAnalysisService(extractor, default_workflows()).analyze(
+            "第一次我打算投入30万元左右",
+            current_intent="product_recommendation",
+            existing_slots={
+                "risk_tolerance": "conservative",
+                "investment_period_months": 3.0,
+            },
+            last_question="您计划投入的大致金额是多少？",
+            active_slot="investment_amount",
+        )
+
+        self.assertEqual(300000, result.slots["investment_amount"])
+        self.assertEqual(ANALYSIS_STATUS_READY, result.status)
+
+    def test_last_question_answer_is_parsed_when_model_omits_period_slot(self) -> None:
+        extractor = FakeExtractor(ExtractionResult(
+            intent="product_recommendation",
+            confidence=0.95,
+            slots={},
+        ))
+        result = RequirementAnalysisService(extractor, default_workflows()).analyze(
+            "从现在算，未来3个月基本不会动用",
+            current_intent="product_recommendation",
+            existing_slots={"risk_tolerance": "conservative"},
+            last_question="这笔资金预计多长时间内不会使用？",
+            active_slot="investment_period_months",
+        )
+
+        self.assertEqual(3, result.slots["investment_period_months"])
+        self.assertIn("金额", result.next_question)
 
     def test_empty_input_is_rejected_before_model_call(self) -> None:
         extractor = FakeExtractor(ExtractionResult(intent="human_service", confidence=1, slots={}))

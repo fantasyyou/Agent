@@ -13,7 +13,14 @@ class DeepSeekRequirementExtractor:
     def __init__(self, client: DeepSeekClient) -> None:
         self.client = client
 
-    def extract(self, user_text: str, workflows: list[WorkflowDefinition]) -> ExtractionResult:
+    def extract(
+        self,
+        user_text: str,
+        workflows: list[WorkflowDefinition],
+        existing_slots: dict | None = None,
+        last_question: str = "",
+        active_slot: str = "",
+    ) -> ExtractionResult:
         """调用模型完成结构化提取，并严格校验返回字段类型。"""
 
         catalog = [
@@ -42,7 +49,12 @@ class DeepSeekRequirementExtractor:
         )
         user_prompt = (
             f"允许的意图和参数：{json.dumps(catalog, ensure_ascii=False)}\n"
-            f"用户原话：{user_text}"
+            f"已经确认的参数：{json.dumps(existing_slots or {}, ensure_ascii=False)}\n"
+            f"当前正在收集的参数：{active_slot or '无'}\n"
+            f"客服上一问：{last_question or '无'}\n"
+            f"用户本轮回答：{user_text}\n"
+            "如果存在客服上一问，优先把用户本轮回答解释为对该问题的回答；"
+            "不得删除或改写已经确认的参数，只提取用户本轮新表达或明确修正的参数。"
         )
         response = self.client.complete(system_prompt, user_prompt)
         result = self.parse_response(response.answer)

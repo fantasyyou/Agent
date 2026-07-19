@@ -50,16 +50,58 @@ type AgentRequest struct {
 	DialogueState *DialogueState
 }
 
-// DialogueState 表示一个会话正在收集的短期业务参数，不属于长期用户记忆。
+const (
+	DialogueSchemaVersion    = "v1"
+	WorkflowVersionV1        = "v1"
+	WorkflowStatusCollecting = "collecting"
+	SlotStatusEmpty          = "empty"
+	SlotStatusConfirmed      = "confirmed"
+	SlotStatusInvalid        = "invalid"
+	SlotSourceUser           = "user"
+	NextActionAskUser        = "ask_user"
+	NextActionRouteWorkflow  = "route_workflow"
+	NextActionAnswerUser     = "answer_user"
+	NextActionRequestHuman   = "request_human"
+)
+
+// WorkflowState 表示当前短期任务的工作流身份和执行状态。
+type WorkflowState struct {
+	Intent  string `json:"intent"`
+	Version string `json:"version"`
+	Status  string `json:"status"`
+}
+
+// SlotState 表示一个槽位的值、校验状态和可审计来源。
+type SlotState struct {
+	Value      any     `json:"value"`
+	Status     string  `json:"status"`
+	Source     string  `json:"source"`
+	Evidence   string  `json:"evidence"`
+	Confidence float64 `json:"confidence"`
+	UpdatedAt  string  `json:"updated_at,omitempty"`
+}
+
+// DialogueState 表示 Go 持久化和维护的短期任务工作区，不属于长期用户记忆。
 type DialogueState struct {
-	// Intent 是当前正在处理的工作流意图。
-	Intent string `json:"intent"`
-	// Slots 是已经通过Python规则校验的参数集合。
-	Slots map[string]any `json:"slots"`
-	// Status 是当前流程状态，例如 need_clarification。
-	Status string `json:"status"`
-	// LastQuestion 是上一轮客服提出的问题，用于避免重复追问。
-	LastQuestion string `json:"last_question"`
+	SchemaVersion string               `json:"schema_version"`
+	Workflow      WorkflowState        `json:"workflow"`
+	ActiveSlot    string               `json:"active_slot"`
+	Slots         map[string]SlotState `json:"slots"`
+	RetryCount    map[string]int       `json:"retry_count"`
+	LastAction    string               `json:"last_action"`
+	LastQuestion  string               `json:"last_question"`
+	UpdatedAt     string               `json:"updated_at,omitempty"`
+}
+
+// DialogueDecision 是 Python 返回的理解结果和下一步建议，最终状态由 Go 合并。
+type DialogueDecision struct {
+	Intent           string
+	Status           string
+	ActiveSlot       string
+	SlotUpdates      map[string]SlotState
+	NextAction       string
+	NextQuestion     string
+	SuggestedOptions []string
 }
 
 // AgentResponse 表示 Python 推理服务返回的回答和模型计量信息。
@@ -80,8 +122,6 @@ type AgentResponse struct {
 	TotalTokens int64
 	// LatencyMS 是模型供应商接口调用耗时，单位为毫秒。
 	LatencyMS int64
-	// DialogueState 是本轮后需要写回 Redis 的新状态。
-	DialogueState *DialogueState
-	// ClearDialogueState 表示工作流已经完成，应删除Redis短期状态。
-	ClearDialogueState bool
+	// Decision 是 Python 对本轮输入的理解和建议动作，不直接代表持久化状态。
+	Decision DialogueDecision
 }

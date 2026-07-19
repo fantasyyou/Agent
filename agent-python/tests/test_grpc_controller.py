@@ -17,11 +17,14 @@ class FakeCustomerService:
         return AnswerResponse(
             answer="请继续补充投资期限。",
             usage=ModelUsage("deepseek", "deepseek-chat", 10, 0, 5, 15, 20),
-            dialogue_state={
+            decision={
                 "intent": "product_recommendation",
-                "slots": {"risk_tolerance": "conservative"},
                 "status": "need_clarification",
-                "last_question": "请继续补充投资期限。",
+                "active_slot": "investment_period_months",
+                "slot_updates": {"risk_tolerance": {"value": "conservative", "status": "confirmed", "source": "user", "evidence": "稳健", "confidence": 0.9}},
+                "next_action": "ask_user",
+                "next_question": "请继续补充投资期限。",
+                "suggested_options": [],
             },
         )
 
@@ -56,7 +59,7 @@ class GRPCCustomerControllerTest(unittest.TestCase):
         self.assertEqual("product_recommendation", service.request.dialogue_state["intent"])
         self.assertEqual("conservative", service.request.dialogue_state["slots"]["risk_tolerance"])
         self.assertEqual("请继续补充投资期限。", payload["answer"])
-        self.assertEqual("product_recommendation", payload["dialogue_state"]["intent"])
+        self.assertEqual("product_recommendation", payload["decision"]["intent"])
 
 
 if __name__ == "__main__":
