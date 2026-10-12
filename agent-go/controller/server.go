@@ -3,8 +3,11 @@ package controller
 
 import (
 	"agent-go/config"
+	"agent-go/observability"
 	"agent-go/service"
 	"encoding/json"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"log/slog"
 	"net/http"
 	"time"
@@ -43,11 +46,21 @@ func (w *statusWriter) WriteHeader(status int) {
 }
 func requestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := observability.WithRequest(r.Context())
+		ctx, span := observability.Start(ctx, r.Method+" "+r.URL.Path)
+		defer span.End()
+		r = r.WithContext(ctx)
+		w.Header().Set("X-Request-ID", observability.RequestID(ctx))
+		w.Header().Set("X-Trace-ID", span.SpanContext().TraceID().String())
 		started := time.Now()
 		writer := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(writer, r)
+		span.SetAttributes(attribute.Int("http.response.status_code", writer.status))
+		if writer.status >= 500 {
+			span.SetStatus(codes.Error, "HTTP request failed")
+		}
 		if r.URL.Path != "/health" {
-			slog.Info("http_request_completed", "method", r.Method, "path", r.URL.Path, "status", writer.status, "duration_ms", time.Since(started).Milliseconds())
+			slog.InfoContext(ctx, "http_request_completed", "method", r.Method, "path", r.URL.Path, "status", writer.status, "duration_ms", time.Since(started).Milliseconds())
 		}
 	})
 }

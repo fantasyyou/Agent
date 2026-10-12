@@ -1,4 +1,6 @@
 from __future__ import annotations
+from observability import traced
+from opentelemetry import trace
 
 import logging
 
@@ -28,6 +30,7 @@ class CustomerService:
         self.model_client = model_client
         self.requirement_service = requirement_service
 
+    @traced("customer.answer")
     def answer(self, request: AnswerRequest) -> AnswerResponse:
         state = request.dialogue_state or {}
         workflow = state.get("workflow") if isinstance(state.get("workflow"), dict) else {}
@@ -50,6 +53,14 @@ class CustomerService:
                 "confidence": analysis.confidence,
             },
         )
+        trace.get_current_span().set_attributes({
+            "intent": analysis.intent,
+            "decision.status": analysis.status,
+            "decision.next_action": analysis.next_action,
+            "decision.active_slot": analysis.active_slot,
+            "slots.missing_count": len(analysis.missing_slots),
+            "slots.collected_count": len(analysis.slots),
+        })
         extraction_usage = analysis.usage or _empty_usage()
         slot_updates = _build_slot_updates(existing_slots, analysis.slots, request.question, analysis.confidence)
         if analysis.status == ANALYSIS_STATUS_NEED_CLARIFICATION:
@@ -145,4 +156,5 @@ def _sum_usage(first: ModelUsage, second: ModelUsage) -> ModelUsage:
         output_tokens=first.output_tokens + second.output_tokens,
         total_tokens=first.total_tokens + second.total_tokens,
         latency_ms=first.latency_ms + second.latency_ms,
+        usage_known=first.usage_known and second.usage_known,
     )

@@ -31,7 +31,7 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 	}
 	answer, err := s.chatService.Ask(r.Context(), claims.UserID, input.SessionID, input.Question)
 	if err != nil {
-		slog.Error("chat_request_failed", "user_id", claims.UserID, "session_id", input.SessionID, "error", err)
+		slog.ErrorContext(r.Context(), "chat_request_failed", "user_id", claims.UserID, "session_id", input.SessionID, "error", err)
 		writeJSON(w, http.StatusBadGateway, model.ChatResponse{Error: "\u667a\u80fd\u5ba2\u670d\u6682\u65f6\u4e0d\u53ef\u7528\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5"})
 		return
 	}

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from observability import traced
 
 import json
 from typing import Any
@@ -13,6 +14,7 @@ class DeepSeekRequirementExtractor:
     def __init__(self, client: DeepSeekClient) -> None:
         self.client = client
 
+    @traced("extraction.extract")
     def extract(
         self,
         user_text: str,
@@ -66,6 +68,7 @@ class DeepSeekRequirementExtractor:
         )
 
     @staticmethod
+    @traced("extraction.parse")
     def parse_response(content: str) -> ExtractionResult:
         """解析模型返回的 JSON；支持模型偶尔附加的 Markdown 代码围栏。"""
 

@@ -67,6 +67,9 @@ func Load(path string) (Config, error) {
 	if value := os.Getenv("MYSQL_DSN"); value != "" {
 		cfg.MySQL.DSN = value
 	}
+	if value := os.Getenv("ELASTIC_PASSWORD"); value != "" {
+		cfg.Elasticsearch.Password = value
+	}
 	if value := os.Getenv("AUTH_SIGNING_SECRET"); value != "" {
 		cfg.Auth.SigningSecret = value
 	}

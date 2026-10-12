@@ -2,8 +2,11 @@ package service
 
 import (
 	"agent-go/model"
+	"agent-go/observability"
 	"context"
 	"fmt"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"log/slog"
 	"time"
 )
@@ -40,63 +43,104 @@ type ChatService struct {
 func NewChatService(memory MemoryRepository, sessions SessionRepository, usage UsageRepository, states DialogueStateRepository, agent AgentClient, actions *ActionExecutor, limit int) *ChatService {
 	return &ChatService{memory: memory, sessions: sessions, usage: usage, states: states, stateService: NewDialogueStateService(), agent: agent, actions: actions, limit: limit}
 }
-func (s *ChatService) Ask(ctx context.Context, userID, sessionID, question string) (string, error) {
+func (s *ChatService) Ask(ctx context.Context, userID, sessionID, question string) (answer string, resultErr error) {
+	ctx = observability.WithRequest(ctx)
+	ctx, finish := observability.Stage(ctx, "chat.process")
+	defer func() {
+		if resultErr != nil {
+			trace.SpanFromContext(ctx).SetAttributes(attribute.String("request.outcome", "failed"))
+		}
+		finish(resultErr)
+	}()
 	started := time.Now()
-	requestID, err := newID("req_")
-	if err != nil {
-		return "", err
-	}
-	slog.Info("chat_processing_started", "request_id", requestID, "user_id", userID, "session_id", sessionID, "question_chars", len([]rune(question)))
+	requestID := observability.RequestID(ctx)
+	slog.InfoContext(ctx, "chat_processing_started", "user_id", userID, "session_id", sessionID, "question_chars", len([]rune(question)))
 	now := time.Now().UTC()
-	if err := s.sessions.Touch(ctx, model.ConversationSession{ID: sessionID, UserID: userID, Status: model.SessionStatusActive, CreatedAt: now, LastActiveAt: now}); err != nil {
-		slog.Error("chat_stage_failed", "request_id", requestID, "stage", "session_touch", "error", err)
+	stageCtx, done := observability.Stage(ctx, "session.touch")
+	err := s.sessions.Touch(stageCtx, model.ConversationSession{ID: sessionID, UserID: userID, Status: model.SessionStatusActive, CreatedAt: now, LastActiveAt: now})
+	done(err)
+	if err != nil {
+		slog.ErrorContext(ctx, "chat_stage_failed", "stage", "session_touch", "error", err)
 		return "", err
 	}
-	memories, err := s.memory.Search(ctx, userID, sessionID, question, s.limit)
+	stageCtx, done = observability.Stage(ctx, "memory.search")
+	memories, err := s.memory.Search(stageCtx, userID, sessionID, question, s.limit)
+	done(err)
 	if err != nil {
-		slog.Error("chat_stage_failed", "request_id", requestID, "stage", "memory_search", "error", err)
+		slog.ErrorContext(ctx, "chat_stage_failed", "stage", "memory_search", "error", err)
 		return "", fmt.Errorf("search memory: %w", err)
 	}
-	slog.Info("memory_recalled", "request_id", requestID, "memory_count", len(memories))
-	state, err := s.states.Get(ctx, userID, sessionID)
+	slog.InfoContext(ctx, "memory_recalled", "memory_count", len(memories))
+	stageCtx, done = observability.Stage(ctx, "dialogue_state.get")
+	state, err := s.states.Get(stageCtx, userID, sessionID)
+	done(err)
 	if err != nil {
 		return "", fmt.Errorf("get dialogue state: %w", err)
 	}
-	slog.Info("dialogue_state_loaded", "request_id", requestID, "has_state", state != nil)
-	response, err := s.agent.Answer(ctx, model.AgentRequest{RequestID: requestID, UserID: userID, SessionID: sessionID, Question: question, Memories: memories, DialogueState: state})
+	slog.InfoContext(ctx, "dialogue_state_loaded", "has_state", state != nil)
+	stageCtx, done = observability.Stage(ctx, "python.answer")
+	response, err := s.agent.Answer(stageCtx, model.AgentRequest{RequestID: requestID, UserID: userID, SessionID: sessionID, Question: question, Memories: memories, DialogueState: state})
+	done(err)
 	if err != nil {
-		slog.Error("chat_stage_failed", "request_id", requestID, "stage", "python_agent", "error", err)
+		slog.ErrorContext(ctx, "chat_stage_failed", "stage", "python_agent", "error", err)
 		return "", fmt.Errorf("call Python agent: %w", err)
 	}
+	stageCtx, done = observability.Stage(ctx, "dialogue_state.apply")
 	nextState, completed := s.stateService.Apply(state, response.Decision, time.Now().UTC())
+	done(nil)
 	if completed {
-		if err := s.states.Delete(ctx, userID, sessionID); err != nil {
+		stageCtx, done = observability.Stage(ctx, "dialogue_state.delete")
+		err = s.states.Delete(stageCtx, userID, sessionID)
+		done(err)
+		if err != nil {
 			return "", fmt.Errorf("delete dialogue state: %w", err)
 		}
-		slog.Info("dialogue_state_deleted", "request_id", requestID)
+		slog.InfoContext(ctx, "dialogue_state_deleted", "request_id", requestID)
 	} else {
-		if err := s.states.Set(ctx, userID, sessionID, nextState); err != nil {
+		stageCtx, done = observability.Stage(ctx, "dialogue_state.set")
+		err = s.states.Set(stageCtx, userID, sessionID, nextState)
+		done(err)
+		if err != nil {
 			return "", fmt.Errorf("store dialogue state: %w", err)
 		}
-		slog.Info("dialogue_state_stored", "request_id", requestID, "intent", nextState.Workflow.Intent, "active_slot", nextState.ActiveSlot, "slot_count", len(nextState.Slots), "retry_count", nextState.RetryCount[nextState.ActiveSlot])
+		slog.InfoContext(ctx, "dialogue_state_stored", "intent", nextState.Workflow.Intent, "active_slot", nextState.ActiveSlot, "slot_count", len(nextState.Slots), "retry_count", nextState.RetryCount[nextState.ActiveSlot])
 	}
-	if err := s.actions.Execute(ctx, userID, sessionID, requestID, response.Decision); err != nil {
-		slog.Error("chat_stage_failed", "request_id", requestID, "stage", "action_execute", "error", err)
+	stageCtx, done = observability.Stage(ctx, "action.execute")
+	err = s.actions.Execute(stageCtx, userID, sessionID, requestID, response.Decision)
+	done(err)
+	if err != nil {
+		slog.ErrorContext(ctx, "chat_stage_failed", "stage", "action_execute", "error", err)
 		return "", err
 	}
-	if err := s.memory.Store(ctx, model.ConversationMemory{UserID: userID, SessionID: sessionID, UserQuestion: question, AssistantAnswer: response.Answer, CreatedAt: time.Now().UTC()}); err != nil {
-		slog.Error("chat_stage_failed", "request_id", requestID, "stage", "memory_store", "error", err)
+	stageCtx, done = observability.Stage(ctx, "memory.store")
+	err = s.memory.Store(stageCtx, model.ConversationMemory{UserID: userID, SessionID: sessionID, UserQuestion: question, AssistantAnswer: response.Answer, CreatedAt: time.Now().UTC()})
+	done(err)
+	if err != nil {
+		slog.ErrorContext(ctx, "chat_stage_failed", "stage", "memory_store", "error", err)
 		return "", fmt.Errorf("store memory: %w", err)
 	}
+	outcome := "answered"
+	if response.Decision.NextAction == model.NextActionAskUser {
+		outcome = "awaiting_input"
+	}
+	if response.Decision.NextAction == model.NextActionRouteWorkflow || response.Decision.NextAction == model.NextActionRequestHuman {
+		outcome = "business_not_configured"
+	}
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.String("business.outcome", outcome), attribute.String("session_id", sessionID))
+	slog.InfoContext(ctx, "business_outcome", "outcome", outcome, "session_id", sessionID)
 	usageID, err := newID("use_")
 	if err != nil {
 		return "", err
 	}
 	usage := model.ModelUsage{ID: usageID, UserID: userID, SessionID: sessionID, RequestID: requestID, Provider: response.Provider, Model: response.Model, InputTokens: response.InputTokens, CachedTokens: response.CachedTokens, OutputTokens: response.OutputTokens, TotalTokens: response.TotalTokens, TotalCost: 0, Currency: model.CurrencyCNY, LatencyMS: response.LatencyMS, Status: model.UsageStatusSuccess, CreatedAt: time.Now().UTC()}
-	if err := s.usage.Create(ctx, usage); err != nil {
-		slog.Error("chat_stage_failed", "request_id", requestID, "stage", "usage_store", "error", err)
+	stageCtx, done = observability.Stage(ctx, "usage.store")
+	err = s.usage.Create(stageCtx, usage)
+	done(err)
+	if err != nil {
+		slog.ErrorContext(ctx, "chat_stage_failed", "stage", "usage_store", "error", err)
 		return "", fmt.Errorf("store model usage: %w", err)
 	}
-	slog.Info("chat_processing_completed", "request_id", requestID, "user_id", userID, "session_id", sessionID, "model", response.Model, "input_tokens", response.InputTokens, "cached_tokens", response.CachedTokens, "output_tokens", response.OutputTokens, "total_tokens", response.TotalTokens, "llm_latency_ms", response.LatencyMS, "duration_ms", time.Since(started).Milliseconds())
+	slog.InfoContext(ctx, "chat_processing_completed", "user_id", userID, "session_id", sessionID, "model", response.Model, "input_tokens", response.InputTokens, "cached_tokens", response.CachedTokens, "output_tokens", response.OutputTokens, "total_tokens", response.TotalTokens, "llm_latency_ms", response.LatencyMS, "duration_ms", time.Since(started).Milliseconds())
 	return response.Answer, nil
 }

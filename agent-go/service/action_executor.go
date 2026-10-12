@@ -4,6 +4,8 @@ import (
 	"agent-go/model"
 	"context"
 	"fmt"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"log/slog"
 	"time"
 )
@@ -26,6 +28,7 @@ func (e *ActionExecutor) Execute(ctx context.Context, userID, sessionID, request
 		status = model.ActionExecutionStatusNotConfigured
 		message = "external business adapter is not configured"
 	}
+	trace.SpanFromContext(ctx).SetAttributes(attribute.String("action.status", status), attribute.String("action.name", decision.NextAction), attribute.String("intent", decision.Intent))
 	id, err := newID("act_")
 	if err != nil {
 		return err
@@ -34,6 +37,6 @@ func (e *ActionExecutor) Execute(ctx context.Context, userID, sessionID, request
 	if err := e.repository.Create(ctx, execution); err != nil {
 		return fmt.Errorf("store action execution: %w", err)
 	}
-	slog.Info("dialogue_action_executed", "request_id", requestID, "intent", decision.Intent, "action", decision.NextAction, "active_slot", decision.ActiveSlot, "status", status)
+	slog.InfoContext(ctx, "dialogue_action_executed", "request_id", requestID, "intent", decision.Intent, "action", decision.NextAction, "active_slot", decision.ActiveSlot, "status", status)
 	return nil
 }

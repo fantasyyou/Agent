@@ -4,10 +4,14 @@ package client
 import (
 	"agent-go/config"
 	"agent-go/model"
+	"agent-go/observability"
 	"context"
 	"fmt"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/structpb"
 	"time"
 )
@@ -27,7 +31,17 @@ func NewPythonAgent(cfg config.PythonAgentConfig) (*PythonAgent, error) {
 	return &PythonAgent{conn: conn, timeout: config.Duration(cfg.Timeout, 60*time.Second)}, nil
 }
 func (c *PythonAgent) Close() error { return c.conn.Close() }
-func (c *PythonAgent) Answer(ctx context.Context, input model.AgentRequest) (model.AgentResponse, error) {
+func (c *PythonAgent) Answer(ctx context.Context, input model.AgentRequest) (result model.AgentResponse, callErr error) {
+	ctx, finish := observability.Stage(ctx, "grpc.client.Answer")
+	defer func() { finish(callErr) }()
+	carrier := propagation.MapCarrier{}
+	otel.GetTextMapPropagator().Inject(ctx, carrier)
+	md, _ := metadata.FromOutgoingContext(ctx)
+	md = md.Copy()
+	for key, value := range carrier {
+		md.Set(key, value)
+	}
+	ctx = metadata.NewOutgoingContext(ctx, md)
 	memories := make([]any, 0, len(input.Memories))
 	for _, memory := range input.Memories {
 		memories = append(memories, map[string]any{"user_question": memory.UserQuestion, "assistant_answer": memory.AssistantAnswer, "created_at": memory.CreatedAt.Format(time.RFC3339)})

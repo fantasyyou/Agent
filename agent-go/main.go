@@ -7,6 +7,7 @@ import (
 	esdao "agent-go/dao/elasticsearch"
 	mysqldao "agent-go/dao/mysql"
 	redisdao "agent-go/dao/redis"
+	"agent-go/observability"
 	"agent-go/service"
 	"context"
 	"flag"
@@ -14,6 +15,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -21,6 +23,15 @@ func main() {
 	listenAddr := flag.String("listen", ":8080", "HTTP listen address")
 	flag.Parse()
 	configureLogging()
+	shutdown, err := observability.Init(context.Background())
+	if err != nil {
+		exit(err)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = shutdown(ctx)
+	}()
 	slog.Info("service_starting", "service", "agent-go", "config", *configPath, "listen", *listenAddr)
 	cfg, err := config.Load(*configPath)
 	if err != nil {
@@ -69,7 +80,7 @@ func configureLogging() {
 	case "error":
 		level = slog.LevelError
 	}
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
+	slog.SetDefault(slog.New(observability.Handler{Handler: slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})}))
 }
 
 func exit(err error) {

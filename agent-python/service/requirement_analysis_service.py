@@ -1,4 +1,5 @@
 from __future__ import annotations
+from observability import traced
 
 import math
 import re
@@ -49,6 +50,7 @@ class RequirementAnalysisService:
         self.confidence_threshold = confidence_threshold
         self.question_policy = question_policy or QuestionPolicy()
 
+    @traced("requirement.analyze")
     def analyze(
         self,
         user_text: str,
@@ -154,6 +156,7 @@ class RequirementAnalysisService:
         )
 
 
+@traced("slots.validate")
 def _normalize_slot_value(definition: SlotDefinition, value) -> tuple[bool, object]:
     """校验并规范化模型或跨服务状态中的参数值。"""
 

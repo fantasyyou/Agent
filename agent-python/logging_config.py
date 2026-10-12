@@ -6,6 +6,8 @@ import json
 import logging
 import os
 import sys
+from observability import request_id, session_id
+from opentelemetry import trace
 from datetime import datetime, timezone
 
 
@@ -23,6 +25,10 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "event": record.getMessage(),
         }
+        sc = trace.get_current_span().get_span_context()
+        payload.update(request_id=request_id.get(), session_id=session_id.get())
+        if sc.is_valid:
+            payload.update(trace_id=format(sc.trace_id, "032x"), span_id=format(sc.span_id, "016x"))
         for key, value in record.__dict__.items():
             if key not in _STANDARD_FIELDS and key not in {"message", "asctime"}:
                 payload[key] = value

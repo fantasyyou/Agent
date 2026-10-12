@@ -13,7 +13,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY customer_service.py logging_config.py ./
+COPY customer_service.py logging_config.py observability.py ./
 COPY client/ ./client/
 COPY controller/ ./controller/
 COPY model/ ./model/

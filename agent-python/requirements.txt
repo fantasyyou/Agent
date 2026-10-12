@@ -1,2 +1,4 @@
+opentelemetry-sdk==1.37.0
+opentelemetry-exporter-otlp-proto-http==1.37.0
 grpcio>=1.66.0,<2
 protobuf>=5.27.0,<7

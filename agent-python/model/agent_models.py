@@ -38,6 +38,7 @@ class ModelUsage:
     output_tokens: int  # 模型生成回答消耗的输出 Token 数量。
     total_tokens: int  # 供应商返回的输入和输出 Token 总数。
     latency_ms: int  # 调用模型供应商接口的耗时，单位为毫秒。
+    usage_known: bool = False
 
 
 @dataclass(frozen=True)

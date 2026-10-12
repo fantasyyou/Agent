@@ -6,6 +6,7 @@ import time
 from typing import Any
 
 import grpc
+from observability import grpc_traced
 from google.protobuf import json_format, struct_pb2
 
 from model.agent_models import AnswerRequest, ConversationMemory
@@ -21,6 +22,7 @@ class GRPCCustomerController:
     def __init__(self, customer_service: CustomerService) -> None:
         self.customer_service = customer_service
 
+    @grpc_traced
     def answer(self, request: struct_pb2.Struct, context: grpc.ServicerContext) -> struct_pb2.Struct:
         started = time.monotonic()
         payload: dict[str, Any] = json_format.MessageToDict(
@@ -59,11 +61,11 @@ class GRPCCustomerController:
         try:
             result = self.customer_service.answer(application_request)
         except Exception as exc:
-            logger.exception(
+            logger.error(
                 "grpc_request_failed",
                 extra={"request_id": application_request.request_id, "duration_ms": int((time.monotonic() - started) * 1000)},
             )
-            context.abort(grpc.StatusCode.INTERNAL, f"LLM call failed: {exc}")
+            context.abort(grpc.StatusCode.INTERNAL, "Agent processing failed")
         logger.info(
             "grpc_request_completed",
             extra={

@@ -8,6 +8,7 @@ from client.deepseek_client import DeepSeekClient
 from client.deepseek_requirement_extractor import DeepSeekRequirementExtractor
 from controller.grpc_controller import GRPCCustomerController
 from logging_config import configure_logging
+from observability import configure_tracing
 from service.customer_service import CustomerService
 from service.prompt_service import PromptService
 from service.requirement_analysis_service import RequirementAnalysisService
@@ -16,6 +17,9 @@ from service.workflow_catalog import default_workflows
 
 def main() -> None:
     configure_logging()
+    provider = configure_tracing()
+    import atexit
+    atexit.register(provider.shutdown)
     parser = argparse.ArgumentParser(description="Financial customer-service gRPC server")
     parser.add_argument("--host", default=os.getenv("GRPC_HOST", "0.0.0.0"))
     parser.add_argument("--port", type=int, default=int(os.getenv("GRPC_PORT", "8765")))

@@ -5,6 +5,9 @@ import logging
 import os
 import time
 import urllib.request
+import uuid
+from observability import stage
+from opentelemetry import trace
 from typing import Any
 
 from model.agent_models import AnswerResponse, ModelUsage, PROVIDER_DEEPSEEK
@@ -22,6 +25,29 @@ class DeepSeekClient:
         self.timeout = int(os.environ.get("DEEPSEEK_TIMEOUT_SECONDS", "60"))
 
     def complete(self, system_prompt: str, user_prompt: str) -> AnswerResponse:
+        parent = trace.get_current_span()
+        operation = "extract" if getattr(parent, "name", "") == "extraction.extract" else "generate"
+        call_id = str(uuid.uuid4())
+        with stage("llm." + operation, {"call_id": call_id, "operation": operation,
+                "gen_ai.request.model": self.model, "prompt_version": operation + "-v1"}) as span:
+            try:
+                result = self._complete(system_prompt, user_prompt)
+            except Exception as exc:
+                span.set_attribute("usage_known", False)
+                logger.error("model_call_usage", extra={"call_id": call_id, "operation": operation,
+                    "result": "failed", "usage_known": False, "error_type": type(exc).__name__})
+                raise
+            usage = result.usage
+            fields = {"call_id": call_id, "operation": operation, "result": "success",
+                "usage_known": getattr(usage, "usage_known", False), "model": usage.model,
+                "input_tokens": usage.input_tokens, "cached_tokens": usage.cached_tokens,
+                "output_tokens": usage.output_tokens, "total_tokens": usage.total_tokens,
+                "duration_ms": usage.latency_ms}
+            span.set_attributes(fields)
+            logger.info("model_call_usage", extra=fields)
+            return result
+
+    def _complete(self, system_prompt: str, user_prompt: str) -> AnswerResponse:
         self._validate_api_key()
         payload: dict[str, Any] = {
             "model": self.model,
@@ -44,7 +70,7 @@ class DeepSeekClient:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 data = json.loads(response.read().decode("utf-8"))
         except Exception:
-            logger.exception(
+            logger.error(
                 "llm_request_failed",
                 extra={"provider": PROVIDER_DEEPSEEK, "model": self.model, "duration_ms": int((time.monotonic() - started) * 1000)},
             )
@@ -70,7 +96,7 @@ class DeepSeekClient:
                 "duration_ms": latency_ms,
             },
         )
-        return AnswerResponse(
+        result = AnswerResponse(
             answer=str(content).strip(),
             usage=ModelUsage(
                 provider=PROVIDER_DEEPSEEK,
@@ -80,8 +106,11 @@ class DeepSeekClient:
                 output_tokens=int(usage.get("completion_tokens") or 0),
                 total_tokens=int(usage.get("total_tokens") or 0),
                 latency_ms=latency_ms,
+                usage_known=bool(usage),
             ),
         )
+
+        return result
 
     def _validate_api_key(self) -> None:
         key = self.api_key.strip()
